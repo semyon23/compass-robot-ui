@@ -1,0 +1,25 @@
+# Зависимости и сборка — восстанавливаются: npm ci, npm run build
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Локальные настройки и секреты
+.env
+.env.*
+!.env.example
+*.local
+
+# Редакторы и ОС
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+.DS_Store
+
+# Логи npm
+npm-debug.log*
+
+# Локальный запуск превью в Claude
+.claude/
