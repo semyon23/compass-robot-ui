@@ -206,11 +206,18 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
           {{ t(`tools.hint_${tool}`) }} · {{ t('tools.escHint') }}
         </div>
 
+        <!-- Телеметрия — под инструментами; пока выбран инструмент, на её месте подсказка -->
         <div
-          v-if="pose"
-          class="pointer-events-none absolute right-3 bottom-3 rounded bg-white/85 px-2 py-1 font-mono text-[11px] text-slate-500 dark:bg-slate-900/85 dark:text-slate-400"
+          v-if="pose && layers.telemetry && !tool"
+          class="pointer-events-none absolute top-16 left-3 rounded-md bg-white/85 px-2.5 py-1.5 font-mono text-[11px] leading-5 text-slate-600 tabular-nums shadow-sm dark:bg-slate-900/85 dark:text-slate-300"
         >
-          {{ t('drive.frame') }}: {{ pose.frame }}
+          <div>x {{ fmt(pose.x) }} · y {{ fmt(pose.y) }} m · θ {{ deg(pose.theta) }}</div>
+          <div>v {{ fmt(pose.linear) }} m/s · ω {{ fmt(pose.angular) }} rad/s</div>
+          <div v-if="robot.controlOwner === 'me'">
+            cmd {{ fmt(command.linear) }}<template v-if="robot.capabilities.has('holonomic')"> / {{ fmt(command.lateral) }}</template>
+            / {{ fmt(command.angular) }}
+          </div>
+          <div class="text-slate-400 dark:text-slate-500">{{ t('drive.frame') }}: {{ pose.frame }}</div>
         </div>
       </MapCanvas>
     </div>
@@ -232,27 +239,6 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
           </div>
         </NTabPane>
       </NTabs>
-
-      <section class="panel-card">
-        <h2 class="panel-title">{{ t('drive.telemetry') }}</h2>
-        <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-sm">
-          <dt class="text-slate-500 dark:text-slate-400">x</dt>
-          <dd class="text-right">{{ fmt(pose?.x) }} m</dd>
-          <dt class="text-slate-500 dark:text-slate-400">y</dt>
-          <dd class="text-right">{{ fmt(pose?.y) }} m</dd>
-          <dt class="text-slate-500 dark:text-slate-400">θ</dt>
-          <dd class="text-right">{{ deg(pose?.theta) }}</dd>
-          <dt class="text-slate-500 dark:text-slate-400">v</dt>
-          <dd class="text-right">{{ fmt(pose?.linear) }} m/s</dd>
-          <dt class="text-slate-500 dark:text-slate-400">ω</dt>
-          <dd class="text-right">{{ fmt(pose?.angular) }} rad/s</dd>
-          <dt class="text-slate-500 dark:text-slate-400">cmd</dt>
-          <dd class="text-right">
-            {{ fmt(command.linear) }}<template v-if="robot.capabilities.has('holonomic')"> / {{ fmt(command.lateral) }}</template>
-            / {{ fmt(command.angular) }}
-          </dd>
-        </dl>
-      </section>
     </div>
   </div>
 </template>

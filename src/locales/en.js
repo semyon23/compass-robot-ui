@@ -217,7 +217,6 @@ export default {
     modeStrafe: 'Sideways',
     keysHint: 'WASD or arrows · Space — stop',
     speed: 'Speed',
-    telemetry: 'Telemetry',
     frame: 'Frame',
     tabManual: 'Manual',
     tabNav: 'Navigation',
@@ -404,6 +403,7 @@ export default {
     layer_localPlan: 'Controller trajectory',
     layer_goals: 'Goals and route',
     layer_fmsRoute: 'fms route',
+    layer_telemetry: 'Telemetry',
   },
   errors: {
     INVALID_INPUT: 'Please check the entered data',

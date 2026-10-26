@@ -123,7 +123,7 @@ const dismiss = () => (robot.navDismissed = new Set([...robot.navDismissed, nav.
       <div class="flex items-baseline gap-2">
         <span class="truncate text-sm font-semibold">{{ view.headline }}</span>
         <span v-if="view.distance != null" class="ml-auto shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400">
-          {{ view.distance.toFixed(1) }} m<template v-if="view.eta != null"> · ~{{ eta(view.eta) }}</template>
+          {{ view.distance.toFixed(1) }} m<template v-if="view.eta > 0"> · ~{{ eta(view.eta) }}</template>
         </span>
       </div>
       <div v-if="view.detail" class="truncate text-xs text-slate-600 dark:text-slate-300">{{ view.detail }}</div>

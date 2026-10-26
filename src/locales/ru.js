@@ -217,7 +217,6 @@ export default {
     modeStrafe: 'Вбок',
     keysHint: 'WASD или стрелки · Пробел — стоп',
     speed: 'Скорость',
-    telemetry: 'Телеметрия',
     frame: 'Фрейм',
     tabManual: 'Вручную',
     tabNav: 'Навигация',
@@ -404,6 +403,7 @@ export default {
     layer_localPlan: 'Траектория контроллера',
     layer_goals: 'Цели и маршрут',
     layer_fmsRoute: 'Маршрут fms',
+    layer_telemetry: 'Телеметрия',
   },
   errors: {
     INVALID_INPUT: 'Проверьте введённые данные',
