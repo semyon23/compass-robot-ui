@@ -25,6 +25,12 @@
         --cs-grid: rgba(30, 64, 175, 0.07);
         --cs-dial: #cbd5e1;
         --cs-dial-major: #64748b;
+        --cs-floor: #eef2f7;
+        --cs-tile: rgba(100, 116, 139, 0.12);
+        --cs-rack: #dbe2ea;
+        --cs-rack-line: #94a3b8;
+        --cs-robot: #1d4ed8;
+        --cs-robot-dark: #1e3a8a;
         --cs-edge: #94a3b8;
         --cs-station: #ffffff;
         --cs-order: #0891b2;
@@ -54,6 +60,12 @@
         --cs-grid: rgba(96, 165, 250, 0.06);
         --cs-dial: #1e293b;
         --cs-dial-major: #475569;
+        --cs-floor: #0b1324;
+        --cs-tile: rgba(148, 163, 184, 0.07);
+        --cs-rack: #172033;
+        --cs-rack-line: #334155;
+        --cs-robot: #3b82f6;
+        --cs-robot-dark: #1e40af;
         --cs-edge: #475569;
         --cs-station: #0f172a;
         --cs-order: #22d3ee;
@@ -136,22 +148,25 @@
         left: 0;
         width: 40px;
         height: 40px;
-        offset-path: path('M 90 110 L 110 175 L 180 165 L 160 90 L 230 110 L 240 190 L 215 240');
+        offset-path: path('M 85 210 V 160 H 135 V 110 H 235 V 210');
         offset-anchor: 50% 50%;
         /* Спрайт робота смотрит вверх, поэтому к направлению пути +90°. */
         offset-rotate: auto 90deg;
         opacity: 0;
         animation-name: cs-drive, cs-robot;
       }
-      .cs-robot img {
+      .cs-robot svg {
         width: 100%;
         height: 100%;
+        overflow: visible;
         filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.35));
-        opacity: 0;
-        transition: opacity 300ms ease;
       }
-      .cs-robot img.is-ready {
-        opacity: 1;
+      .cs-beam {
+        transform-origin: 20px 22px;
+        animation: cs-spin 0.9s linear infinite;
+      }
+      .cs-floor {
+        animation: cs-rise 600ms ease both;
       }
       .cs-goal-ping {
         opacity: 0;
@@ -292,6 +307,7 @@
         }
         .cs-graph path, .cs-done { stroke-dashoffset: 0; }
         .cs-stations circle, .cs-order, .cs-robot { opacity: 1; }
+        .cs-beam { display: none; }
         .cs-robot { offset-distance: 100%; }
       }
     </style>
@@ -302,6 +318,45 @@
     <div id="cs-splash" role="status" aria-live="polite">
       <div class="cs-scene" aria-hidden="true">
         <svg width="320" height="320" viewBox="0 0 320 320">
+          <!-- Пол склада: плитка, стеллажи в клетках между проездами и рядами сверху и снизу -->
+          <defs>
+            <pattern id="cs-tiles" width="16" height="16" patternUnits="userSpaceOnUse">
+              <path d="M 16 0 H 0 V 16" fill="none" stroke="var(--cs-tile)" stroke-width="1" />
+            </pattern>
+          </defs>
+          <g class="cs-floor">
+            <circle cx="160" cy="160" r="136" fill="var(--cs-floor)" />
+            <circle cx="160" cy="160" r="136" fill="url(#cs-tiles)" />
+            <g fill="var(--cs-rack)" stroke="var(--cs-rack-line)" stroke-width="1.5">
+              <rect x="96" y="122" width="28" height="26" rx="2" />
+              <rect x="146" y="122" width="28" height="26" rx="2" />
+              <rect x="196" y="122" width="28" height="26" rx="2" />
+              <rect x="96" y="172" width="28" height="26" rx="2" />
+              <rect x="146" y="172" width="28" height="26" rx="2" />
+              <rect x="196" y="172" width="28" height="26" rx="2" />
+              <rect x="90" y="76" width="42" height="16" rx="2" />
+              <rect x="139" y="76" width="42" height="16" rx="2" />
+              <rect x="188" y="76" width="42" height="16" rx="2" />
+              <rect x="90" y="228" width="42" height="16" rx="2" />
+              <rect x="139" y="228" width="42" height="16" rx="2" />
+              <rect x="188" y="228" width="42" height="16" rx="2" />
+            </g>
+            <g stroke="var(--cs-rack-line)" stroke-width="1">
+              <line x1="96" y1="135" x2="124" y2="135" />
+              <line x1="146" y1="135" x2="174" y2="135" />
+              <line x1="196" y1="135" x2="224" y2="135" />
+              <line x1="96" y1="185" x2="124" y2="185" />
+              <line x1="146" y1="185" x2="174" y2="185" />
+              <line x1="196" y1="185" x2="224" y2="185" />
+              <line x1="111" y1="76" x2="111" y2="92" />
+              <line x1="160" y1="76" x2="160" y2="92" />
+              <line x1="209" y1="76" x2="209" y2="92" />
+              <line x1="111" y1="228" x2="111" y2="244" />
+              <line x1="160" y1="228" x2="160" y2="244" />
+              <line x1="209" y1="228" x2="209" y2="244" />
+            </g>
+          </g>
+
           <!-- Циферблат компаса -->
           <g class="cs-dial">
             <circle cx="160" cy="160" r="154" fill="none" stroke="var(--cs-dial)" stroke-width="1.5" />
@@ -316,36 +371,52 @@
             <text x="160" y="34" text-anchor="middle" font-size="10" font-weight="700" fill="var(--cs-accent)" font-family="Inter, system-ui, sans-serif">N</text>
           </g>
 
-          <!-- Граф склада: рёбра и станции -->
+          <!-- Граф склада: станции сеткой, проезды между ними — только прямые -->
           <g class="cs-graph" fill="none" stroke="var(--cs-edge)" stroke-width="2" stroke-linecap="round">
-            <path pathLength="100" d="M 90 110 L 160 90 L 230 110 M 110 175 L 180 165 L 240 190 M 95 235 L 165 235 L 215 240
-                                      M 90 110 L 110 175 L 95 235 M 160 90 L 180 165 L 165 235 M 230 110 L 240 190 L 215 240" />
+            <path pathLength="100" d="M 85 110 H 235 M 85 160 H 235 M 85 210 H 235
+                                      M 85 110 V 210 M 135 110 V 210 M 185 110 V 210 M 235 110 V 210" />
           </g>
 
           <!-- Маршрут задания fms (пунктир) и пройденная часть (зелёным) -->
           <g fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-            <path class="cs-order" d="M 90 110 L 110 175 L 180 165 L 160 90 L 230 110 L 240 190 L 215 240"
-                  stroke="var(--cs-order)" stroke-dasharray="6 6" />
-            <path class="cs-done" pathLength="100" d="M 90 110 L 110 175 L 180 165 L 160 90 L 230 110 L 240 190 L 215 240"
-                  stroke="var(--cs-nav)" />
+            <path class="cs-order" d="M 85 210 V 160 H 135 V 110 H 235 V 210" stroke="var(--cs-order)" stroke-dasharray="6 6" />
+            <path class="cs-done" pathLength="100" d="M 85 210 V 160 H 135 V 110 H 235 V 210" stroke="var(--cs-nav)" />
           </g>
 
           <g class="cs-stations" fill="var(--cs-station)" stroke="var(--cs-edge)" stroke-width="2">
-            <circle cx="90" cy="110" r="6" style="animation-delay: 0ms" />
-            <circle cx="160" cy="90" r="6" style="animation-delay: 60ms" />
-            <circle cx="230" cy="110" r="6" style="animation-delay: 120ms" />
-            <circle cx="110" cy="175" r="6" style="animation-delay: 180ms" />
-            <circle cx="180" cy="165" r="6" style="animation-delay: 240ms" />
-            <circle cx="240" cy="190" r="6" style="animation-delay: 300ms" />
-            <circle cx="95" cy="235" r="6" style="animation-delay: 360ms" />
-            <circle cx="165" cy="235" r="6" style="animation-delay: 420ms" />
-            <circle cx="215" cy="240" r="7" stroke="var(--cs-nav)" stroke-width="2.5" style="animation-delay: 480ms" />
+            <circle cx="85" cy="110" r="6" style="animation-delay: 0ms" />
+            <circle cx="135" cy="110" r="6" style="animation-delay: 40ms" />
+            <circle cx="185" cy="110" r="6" style="animation-delay: 80ms" />
+            <circle cx="235" cy="110" r="6" style="animation-delay: 120ms" />
+            <circle cx="85" cy="160" r="6" style="animation-delay: 160ms" />
+            <circle cx="135" cy="160" r="6" style="animation-delay: 200ms" />
+            <circle cx="185" cy="160" r="6" style="animation-delay: 240ms" />
+            <circle cx="235" cy="160" r="6" style="animation-delay: 280ms" />
+            <circle cx="85" cy="210" r="6" style="animation-delay: 320ms" />
+            <circle cx="135" cy="210" r="6" style="animation-delay: 360ms" />
+            <circle cx="185" cy="210" r="6" style="animation-delay: 400ms" />
+            <circle cx="235" cy="210" r="7" stroke="var(--cs-nav)" stroke-width="2.5" style="animation-delay: 440ms" />
           </g>
-          <circle class="cs-goal-ping" cx="215" cy="240" r="9" fill="none" stroke="var(--cs-nav)" stroke-width="2" />
+          <circle class="cs-goal-ping" cx="235" cy="210" r="9" fill="none" stroke="var(--cs-nav)" stroke-width="2" />
         </svg>
 
+        <!-- Робот сверху, нос вверх: корпус, бампер с фарами, колёса, лидар с лучом -->
         <div class="cs-robot">
-          <img alt="" />
+          <svg viewBox="0 0 40 40">
+            <g fill="#0f172a">
+              <rect x="6" y="11" width="4" height="8" rx="1.5" />
+              <rect x="30" y="11" width="4" height="8" rx="1.5" />
+              <rect x="6" y="25" width="4" height="8" rx="1.5" />
+              <rect x="30" y="25" width="4" height="8" rx="1.5" />
+            </g>
+            <rect x="9" y="7" width="22" height="28" rx="6" fill="var(--cs-robot)" />
+            <path d="M 9 13 V 12 A 5 5 0 0 1 14 7 H 26 A 5 5 0 0 1 31 12 V 13 Z" fill="var(--cs-robot-dark)" />
+            <circle cx="13.5" cy="10" r="1.6" fill="#fde68a" />
+            <circle cx="26.5" cy="10" r="1.6" fill="#fde68a" />
+            <circle cx="20" cy="22" r="6" fill="#0f172a" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.5" />
+            <path class="cs-beam" d="M 20 22 L 20 16.6" stroke="var(--cs-accent)" stroke-width="2" stroke-linecap="round" />
+            <circle cx="20" cy="22" r="1.5" fill="var(--cs-accent)" />
+          </svg>
         </div>
       </div>
 
@@ -368,14 +439,6 @@
         // Минимальное время показа, мс: робот успевает проехать маршрут до конечной станции.
         var MIN_MS = reduced ? 0 : 6000
 
-        // Картинку робота ставим из скрипта: путь в атрибуте src Vite в dev-режиме
-        // может испортить (base подставляется дважды).
-        var robot = el.querySelector('.cs-robot img')
-        robot.onload = function () {
-          robot.classList.add('is-ready')
-        }
-        robot.src = '%BASE_URL%splash/robot.svg'
-
         // Язык и гамма — те же ключи, что у locales/index.js и useTheme.
         var get = function (key) {
           try {
@@ -392,11 +455,13 @@
         document.documentElement.lang = ru ? 'ru' : 'en'
         el.setAttribute('aria-label', T.label)
         document.getElementById('cs-splash-tagline').textContent = T.tagline
-        // Серая гамма (Настройки → Интерфейс) — логотип и полоса загрузки серые, как в интерфейсе.
+        // Серая гамма (Настройки → Интерфейс) — логотип, полоса загрузки и робот серые, как в интерфейсе.
         if (get('compass.scheme') === 'gray') {
           var dark = document.documentElement.classList.contains('dark')
           el.style.setProperty('--cs-word-a', dark ? '#d4d8dd' : '#272b31')
           el.style.setProperty('--cs-word-b', dark ? '#8e959f' : '#6c737d')
+          el.style.setProperty('--cs-robot', dark ? '#8e959f' : '#4b525c')
+          el.style.setProperty('--cs-robot-dark', dark ? '#4b525c' : '#272b31')
         }
 
         // Подписи идут в такт анимации (цикл 7 с, см. cs-drive): граф, задание, езда, доехал.
