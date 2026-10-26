@@ -14,20 +14,21 @@ import { saveBlob } from '../lib/download'
  * и, при открытии, WARN+ из памяти compass_core — что было, пока Compass не был открыт.
  * Всё хранится только в этой вкладке; последние MAX_ENTRIES строк.
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const message = useMessage()
 const robot = useRobotStore()
 
 const MAX_ENTRIES = 2000
 const LEVELS = { 10: 'debug', 20: 'info', 30: 'warn', 40: 'error', 50: 'fatal' }
 
-// Группы нод — по именам из nav2_bringup, slam_toolbox и compass_bringup.
+// Группы нод — по именам из nav2_bringup, slam_toolbox, compass_bringup и vda5050_ros2.
 const GROUPS = {
   nav2: /controller|planner|bt_navigator|behavior|smoother|collision|waypoint|docking|route_server|lifecycle_manager_navigation|costmap/,
   localization: /amcl|map_server|lifecycle_manager_localization/,
   slam: /slam/,
   compass: /compass|rosbridge|twist_mux/,
   orchestrator: /task_orchestrator/,
+  vda5050: /vda5050/,
 }
 
 const entries = ref([])
@@ -141,8 +142,12 @@ watch(() => shown.value.length, () => follow.value && toBottom())
 // ---------- Строка ----------
 
 const expanded = ref(null)
+// Дата и время: история WARN+ хранится 7 дней — без даты не понять, когда это было.
+// Формат один для всех языков: 2026-10-26 15:45:47.703.
+const pad = (n, w = 2) => String(n).padStart(w, '0')
 const timeText = (d) =>
-  d.toLocaleTimeString(locale.value, { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0')
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+  `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
 
 async function copy(e) {
   try {
@@ -200,7 +205,7 @@ const LEVEL_CLASSES = {
             <span class="w-44 shrink-0 truncate text-slate-500 dark:text-slate-400" :title="e.name">{{ e.name }}</span>
             <span class="min-w-0 flex-1 break-words whitespace-pre-wrap text-slate-800 dark:text-slate-100">{{ e.msg }}</span>
           </div>
-          <div v-if="expanded === e.id" class="mt-1 flex items-center gap-3 pl-[7.5rem] text-slate-500 dark:text-slate-400">
+          <div v-if="expanded === e.id" class="mt-1 flex items-center gap-3 pl-[12.5rem] text-slate-500 dark:text-slate-400">
             <span class="min-w-0 flex-1 truncate">{{ e.where || '—' }}</span>
             <NButton size="tiny" @click.stop="copy(e)">{{ t('logs.copy') }}</NButton>
           </div>

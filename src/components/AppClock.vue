@@ -9,9 +9,11 @@ const now = useNow({ interval: 1000 })
 const time = computed(() =>
   now.value.toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
 )
-const date = computed(() =>
-  now.value.toLocaleDateString(locale.value, { day: '2-digit', month: '2-digit', year: 'numeric' }),
-)
+// Дата одним форматом для всех языков: 26.10.2026.
+const date = computed(() => {
+  const d = now.value
+  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`
+})
 </script>
 
 <template>
