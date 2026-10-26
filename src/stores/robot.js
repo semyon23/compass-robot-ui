@@ -21,6 +21,23 @@ const STREAMS = {
   path: { topic: '/plan', type: 'nav_msgs/msg/Path', options: { throttle_rate: 500 } },
   // Маршрут order'а fms (base) от агента VDA 5050.
   fmsPath: { topic: '/vda5050/path', type: 'nav_msgs/msg/Path' },
+  // Слои навигации на карте «Управления» — подписка, только пока слой включён (useMapLayers).
+  localPlan: { topic: '/optimal_trajectory', type: 'nav_msgs/msg/Path', options: { throttle_rate: 200 } },
+  particles: {
+    topic: '/particle_cloud',
+    type: 'nav2_msgs/msg/ParticleCloud',
+    options: { compression: 'cbor', throttle_rate: 1000 },
+  },
+  localCostmap: {
+    topic: '/local_costmap/costmap',
+    type: 'nav_msgs/msg/OccupancyGrid',
+    options: { compression: 'cbor', throttle_rate: 500 },
+  },
+  globalCostmap: {
+    topic: '/global_costmap/costmap',
+    type: 'nav_msgs/msg/OccupancyGrid',
+    options: { compression: 'cbor', throttle_rate: 2000 },
+  },
   // Переходы узлов дерева поведения Nav2 — без троттлинга, иначе потеряем смену состояния.
   bt: { topic: '/behavior_tree_log', type: 'nav2_msgs/msg/BehaviorTreeLog' },
 }
@@ -51,6 +68,18 @@ function isoOf(stamp) {
   return new Date(ms > Date.UTC(2020, 0, 1) ? ms : Date.now()).toISOString()
 }
 
+/** nav_msgs/OccupancyGrid → { width, height, resolution, origin: [x, y, theta], data }. */
+function gridOf(msg) {
+  const o = msg.info.origin
+  return {
+    width: msg.info.width,
+    height: msg.info.height,
+    resolution: msg.info.resolution,
+    origin: [o.position.x, o.position.y, yawOf(o.orientation)],
+    data: msg.data, // Int8Array из CBOR
+  }
+}
+
 /** diagnostic_msgs/KeyValue[] → объект. */
 function objectOf(pairs) {
   return Object.fromEntries((pairs || []).map(({ key, value }) => [key, value]))
@@ -72,6 +101,10 @@ export const useRobotStore = defineStore('robot', () => {
   const navPath = ref([]) // /plan: путь планировщика Nav2
   const fms = ref(null) // /vda5050/status: работа с fms; null — агента нет
   const fmsPath = ref([]) // /vda5050/path: маршрут order'а fms
+  const localPlan = ref([]) // /optimal_trajectory: куда контроллер ведёт робота сейчас
+  const particles = ref([]) // /particle_cloud: частицы AMCL [[x, y, theta], ...]
+  const localCostmap = ref(null) // /local_costmap/costmap — как liveMap
+  const globalCostmap = ref(null) // /global_costmap/costmap — как liveMap
   let fmsAt = 0
   const btRunning = ref([]) // узлы дерева поведения Nav2 в состоянии RUNNING
   const events = ref([])
@@ -282,16 +315,15 @@ export const useRobotStore = defineStore('robot', () => {
     fmsPath: (msg) => {
       fmsPath.value = (msg.poses || []).map((p) => [p.pose.position.x, p.pose.position.y])
     },
-    map: (msg) => {
-      const o = msg.info.origin
-      liveMap.value = {
-        width: msg.info.width,
-        height: msg.info.height,
-        resolution: msg.info.resolution,
-        origin: [o.position.x, o.position.y, yawOf(o.orientation)],
-        data: msg.data, // Int8Array из CBOR
-      }
+    localPlan: (msg) => {
+      localPlan.value = (msg.poses || []).map((p) => [p.pose.position.x, p.pose.position.y])
     },
+    particles: (msg) => {
+      particles.value = (msg.particles || []).map(({ pose }) => [pose.position.x, pose.position.y, yawOf(pose.orientation)])
+    },
+    localCostmap: (msg) => (localCostmap.value = gridOf(msg)),
+    globalCostmap: (msg) => (globalCostmap.value = gridOf(msg)),
+    map: (msg) => (liveMap.value = gridOf(msg)),
   }
 
   /** Подписка экрана на потоки по именам (pose, scan). Неизвестные имена — следующие срезы. */
@@ -352,9 +384,17 @@ export const useRobotStore = defineStore('robot', () => {
       navPath.value = []
       fms.value = null
       fmsPath.value = []
+      localPlan.value = []
+      particles.value = []
+      localCostmap.value = null
+      globalCostmap.value = null
       latencyMs.value = null
       leaseId.value = null
       stopHeartbeat()
+    })
+    // Закрыли или перезагрузили вкладку — отдаём управление сразу, не ждём 2 с без heartbeat.
+    window.addEventListener('pagehide', () => {
+      if (leaseId.value) robotApi.releaseControl(leaseId.value).catch(() => {})
     })
     setInterval(measureLatency, PING_MS)
     ros.connect()
@@ -371,6 +411,10 @@ export const useRobotStore = defineStore('robot', () => {
     navActivity,
     fms,
     fmsPath,
+    localPlan,
+    particles,
+    localCostmap,
+    globalCostmap,
     events,
     latencyMs,
     clientId,

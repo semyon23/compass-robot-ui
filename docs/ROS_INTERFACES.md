@@ -133,10 +133,17 @@ compass_core кладёт **код ошибки в `message`** (например
 | `/compass/config/changed` | `robot_interfaces/msg/ConfigChanged` | при `apply` | reliable, transient_local, 1 | Настройки |
 | `/map` | `nav_msgs/msg/OccupancyGrid` | slam_toolbox / map_server | reliable, transient_local | `compression: cbor`, `throttle_rate: 1000` |
 | `/plan` | `nav_msgs/msg/Path` | planner_server | — | `throttle_rate: 500` |
+| `/optimal_trajectory` | `nav_msgs/msg/Path` | controller_server (MPPI) — куда ведёт робота сейчас | — | слой «Траектория контроллера», `throttle_rate: 200` |
+| `/particle_cloud` | `nav2_msgs/msg/ParticleCloud` | AMCL | — | слой «Частицы локализации», `compression: cbor`, `throttle_rate: 1000` |
+| `/local_costmap/costmap` | `nav_msgs/msg/OccupancyGrid` | локальная карта стоимости (вокруг робота) | — | слой, `compression: cbor`, `throttle_rate: 500` |
+| `/global_costmap/costmap` | `nav_msgs/msg/OccupancyGrid` | глобальная карта стоимости | — | слой, `compression: cbor`, `throttle_rate: 2000` |
 | `/vda5050/status` | `robot_interfaces/msg/VdaStatus` | при изменении + 1 Гц | reliable, transient_local, 1 | всегда |
 | `/vda5050/path` | `nav_msgs/msg/Path` | при новом order'е / update'е | reliable, transient_local, 1 | Управление |
 | `/behavior_tree_log` | `nav2_msgs/msg/BehaviorTreeLog` | bt_navigator, при смене состояний | — | Управление, без троттлинга |
 | `/rosout` | `rcl_interfaces/msg/Log` | все ноды | reliable | Журнал |
+
+Слои карты «Управления» (кнопка «Слои») включаются и выключаются в UI, выбор хранится в браузере.
+Карты стоимости, частицы и траектория — подписка, только пока слой включён: это самые тяжёлые потоки.
 
 Заметки:
 - **`/robot/operating_mode`** — публикует только compass_core; значения — строки `operatingMode`
@@ -272,6 +279,11 @@ compass_core кладёт **код ошибки в `message`** (например
    teleop игнорируется, `NavStart` отвечает `CONTROL_LOCKED`.
 5. `status.control.holder_id` — `client_id` владельца: UI сравнивает со своим и показывает
    «Вы управляете» / «Управляет {holder_name}».
+
+В UI аренда держится, пока открыта вкладка, — и при переходе между экранами. Отдать: кнопка на
+экране «Управление» или «✕» у метки «Вы управляете» в верхней панели. Закрытие или перезагрузка
+вкладки отдаёт аренду сразу (`pagehide`), иначе её снимет робот через 2 с. Джойстик и клавиатура
+работают только на экране «Управление»: при уходе с него ручное движение останавливается.
 
 Аренда нужна только в режимах, где можно ездить джойстиком: `MANUAL`, `INTERVENED`, `SERVICE`,
 `TEACH_IN`. В `AUTOMATIC` и `STARTUP` `acquire` отвечает `MODE_NOT_ALLOWED`; чтобы взять робота
@@ -659,7 +671,7 @@ rosbridge, отдельного веб-сервера ставить не нуж
 # параметры ноды rosbridge_server/rosbridge_websocket (в launch compass_bringup)
 address: "127.0.0.1"
 port: 9090
-topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /rosout, /task_orchestrator/active_tasks]"
+topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout, /task_orchestrator/active_tasks]"
 topics_pub_glob: "[/compass/teleop, /compass/control/heartbeat, /initialpose]"
 services_glob: "[/compass/*, /robot/set_operating_mode, /robot/maps/activate, /task_orchestrator/list_task_records, /task_orchestrator/list_events, /task_orchestrator/get_task]"
 actions_glob: "[]"

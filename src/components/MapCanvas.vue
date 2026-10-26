@@ -3,12 +3,14 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '../composables/useTheme'
 import { worldToScreen, screenToWorld, zoomAt, pan, niceStep, heading } from '../lib/view2d'
-import { gridCanvas, PALETTES } from '../lib/mapTint'
+import { costmapCanvas, gridCanvas, PALETTES } from '../lib/mapTint'
+import { MAP_COLORS } from '../lib/mapColors'
 import { useRobotLook } from '../composables/useRobotLook'
 import { drawRobotShape } from '../lib/robotShapes'
 
 /**
- * 2D-вид вокруг робота: сетка в метрах, карта, путь Nav2, цели, скан, робот.
+ * 2D-вид вокруг робота: сетка в метрах, карта, карты стоимости, пути Nav2, цели, маршрут fms,
+ * частицы AMCL, скан, робот. Слой не передан (null) — не рисуется.
  *
  * Без инструмента: перетаскивание — двигать карту, колесо / щипок — масштаб.
  * С инструментом (tool = 'pose' | 'goal' | 'route'), как в RViz: нажать на карту
@@ -23,7 +25,11 @@ const props = defineProps({
   map: { type: Object, default: null },
   robotRadius: { type: Number, default: 0.3 },
   tool: { type: String, default: null },
-  path: { type: Array, default: null }, // путь Nav2 [[x, y], ...]
+  path: { type: Array, default: null }, // глобальный путь Nav2 (/plan) [[x, y], ...]
+  localPlan: { type: Array, default: null }, // траектория контроллера (/optimal_trajectory) [[x, y], ...]
+  particles: { type: Array, default: null }, // частицы AMCL [[x, y, theta], ...]
+  localCostmap: { type: Object, default: null }, // карты стоимости Nav2 — как map
+  globalCostmap: { type: Object, default: null },
   fmsPath: { type: Array, default: null }, // маршрут order'а fms [[x, y], ...] — узлы графа
   // Текущая цель/маршрут из nav_status: { kind, poses, index, state }
   nav: { type: Object, default: null },
@@ -48,20 +54,8 @@ let shown = null // { meta, tinted, dark }
 // Жест инструмента: { pointerId, start: {x,y} мир, end: {x,y} мир, startPx: {x,y} экран, dragged }
 let pick = null
 
-// Цвета — docs/DESIGN.md. Цель и путь — цвет режима навигации, черновик маршрута — акцент,
-// начальная поза — янтарный.
-const COLORS = {
-  light: {
-    bg: '#e9eef4', minor: '#dbe2ea', major: '#c3ccd8', axisX: '#ef4444', axisY: '#22c55e',
-    scan: '#ea580c', text: '#64748b',
-    nav: '#059669', draft: '#f97316', pose: '#d97706', done: '#94a3b8', label: '#ffffff', fms: '#0891b2',
-  },
-  dark: {
-    bg: '#020617', minor: '#0f172a', major: '#1e293b', axisX: '#f87171', axisY: '#4ade80',
-    scan: '#fb923c', text: '#94a3b8',
-    nav: '#34d399', draft: '#fb923c', pose: '#fbbf24', done: '#64748b', label: '#020617', fms: '#22d3ee',
-  },
-}
+// Картинки карт стоимости: строим один раз на сообщение.
+const costmapImages = new WeakMap()
 
 const DRAG_PX = 12 // меньше — это тап, направление выбираем сами
 
@@ -72,7 +66,7 @@ function requestDraw() {
 function draw() {
   frame = 0
   if (!ctx || !width) return
-  const c = isDark.value ? COLORS.dark : COLORS.light
+  const c = isDark.value ? MAP_COLORS.dark : MAP_COLORS.light
   const dpr = window.devicePixelRatio || 1
   if (follow.value && props.pose) view = { ...view, cx: props.pose.x, cy: props.pose.y }
 
@@ -82,11 +76,15 @@ function draw() {
 
   drawGrid(c)
   drawMap()
+  drawCostmap(props.globalCostmap)
+  drawCostmap(props.localCostmap)
   drawAxes(c)
   drawFmsPath(c)
-  drawPath(c)
+  drawLine(props.path, c.plan, 3)
+  drawLine(props.localPlan, c.localPlan, 2)
   drawNav(c)
   drawDraft(c)
+  drawParticles(c)
   drawScan(c)
   drawRobot()
   drawPick(c)
@@ -109,6 +107,18 @@ function drawMap() {
   ctx.save()
   ctx.imageSmoothingEnabled = size < 1
   ctx.drawImage(shown.tinted, sx, sy, m.width * size, m.height * size)
+  ctx.restore()
+}
+
+function drawCostmap(grid) {
+  if (!grid?.data) return
+  let img = costmapImages.get(grid)
+  if (!img) costmapImages.set(grid, (img = costmapCanvas(grid)))
+  const [sx, sy] = toScreen(grid.origin[0], grid.origin[1] + grid.height * grid.resolution)
+  const size = grid.resolution * view.scale
+  ctx.save()
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(img, sx, sy, grid.width * size, grid.height * size)
   ctx.restore()
 }
 
@@ -155,16 +165,17 @@ function drawAxes(c) {
   ctx.stroke()
 }
 
-function drawPath(c) {
-  if (!props.path?.length) return
+/** Путь Nav2: глобальный (/plan) или траектория контроллера. */
+function drawLine(points, color, lineWidth) {
+  if (!points?.length) return
   ctx.save()
-  ctx.strokeStyle = c.nav
-  ctx.lineWidth = 3
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
   ctx.globalAlpha = 0.85
   ctx.beginPath()
-  props.path.forEach(([x, y], i) => {
+  points.forEach(([x, y], i) => {
     const [px, py] = toScreen(x, y)
     if (i) ctx.lineTo(px, py)
     else ctx.moveTo(px, py)
@@ -295,6 +306,25 @@ function drawWaypoint(p, n, color, c, current) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(String(n), px, py + 0.5)
+  ctx.restore()
+}
+
+/** Частицы AMCL: точка и короткий штрих по направлению. Кучное облако — локализация уверенная. */
+function drawParticles(c) {
+  if (!props.particles?.length) return
+  ctx.save()
+  ctx.strokeStyle = c.particles
+  ctx.fillStyle = c.particles
+  ctx.globalAlpha = 0.45
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  for (const [x, y, theta] of props.particles) {
+    const [px, py] = toScreen(x, y)
+    ctx.moveTo(px, py)
+    ctx.lineTo(px + 4 * Math.cos(theta), py - 4 * Math.sin(theta))
+    ctx.fillRect(px - 0.75, py - 0.75, 1.5, 1.5)
+  }
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -498,7 +528,8 @@ watch(() => props.map, (m) => {
 }, { immediate: true })
 
 watch(
-  () => [props.pose, props.scan, props.map, props.path, props.fmsPath, props.nav, props.draft, props.tool, follow.value, isDark.value, brand.value, robotLook.kind.value],
+  () => [props.pose, props.scan, props.map, props.path, props.localPlan, props.particles, props.localCostmap,
+    props.globalCostmap, props.fmsPath, props.nav, props.draft, props.tool, follow.value, isDark.value, brand.value, robotLook.kind.value],
   requestDraw,
   { deep: false },
 )

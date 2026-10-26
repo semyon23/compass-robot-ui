@@ -45,6 +45,36 @@ export function gridCanvas(grid, palette) {
 }
 
 /**
+ * Карта стоимости Nav2 (nav_msgs/OccupancyGrid с costmap) → прозрачный canvas поверх карты.
+ * 0 — свободно (прозрачно), 1..98 — зона вокруг препятствий: от жёлтого к красному, плотнее
+ * к препятствию; 99 — робот задел бы препятствие корпусом; 100 — препятствие.
+ */
+export function costmapCanvas(grid) {
+  const { width, height, data } = grid
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const g = canvas.getContext('2d')
+  const img = g.createImageData(width, height)
+  const px = img.data
+  for (let y = 0; y < height; y++) {
+    const src = (height - 1 - y) * width
+    for (let x = 0; x < width; x++) {
+      const v = data[src + x]
+      if (v <= 0) continue
+      const k = Math.min(v, 99) / 99
+      const i = (y * width + x) * 4
+      px[i] = 250 - 30 * k
+      px[i + 1] = 204 - 166 * k
+      px[i + 2] = 21 + 17 * k
+      px[i + 3] = v >= 100 ? 150 : 20 + 90 * k // полупрозрачно: стены карты видны сквозь
+    }
+  }
+  g.putImageData(img, 0, 0)
+  return canvas
+}
+
+/**
  * map.pgm (P5, 8 бит, как пишет map_saver) → { width, height, data }.
  * Пиксель → занятость как у map_server (trinary, negate 0, пороги 0.65 / 0.196 — как пишет
  * compass_core): 0 — занято, 254 — свободно, 205 — неизвестно.

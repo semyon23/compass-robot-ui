@@ -8,6 +8,8 @@ import ControlCard from '../components/ControlCard.vue'
 import JoystickCard from '../components/JoystickCard.vue'
 import NavPanel from '../components/NavPanel.vue'
 import FmsCard from '../components/FmsCard.vue'
+import MapLayers from '../components/MapLayers.vue'
+import { MAP_LAYERS, useMapLayers } from '../composables/useMapLayers'
 import { useRobotStore } from '../stores/robot'
 import { useSubscription } from '../composables/useSubscription'
 import { activateMap } from '../api/navigation'
@@ -39,6 +41,8 @@ const navReady = computed(() => hasNav.value && navRunning.value && robot.status
 const localized = computed(() => robot.status?.localization?.status === 'ok')
 // Работа с fms: маршрут order'а на карте и карточка fms в панели.
 const fmsMode = computed(() => ['AUTOMATIC', 'INTERVENED'].includes(robot.status?.mode))
+// Маршрут fms — в списке слоёв, только когда есть агент VDA 5050.
+const availableLayers = computed(() => MAP_LAYERS.filter((key) => key !== 'fmsRoute' || robot.fms))
 const canCommand = computed(
   () =>
     navReady.value && stackRunning('navigation') && robot.status?.mode === 'SERVICE' && localized.value &&
@@ -64,6 +68,21 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => offMap?.())
+
+// Слои навигации: тяжёлые (карты стоимости, частицы, траектория) — подписка, только пока видны.
+const layers = useMapLayers()
+const LAYER_STREAMS = ['localPlan', 'particles', 'localCostmap', 'globalCostmap']
+let offLayers = null
+watch(
+  () => [robot.online && navRunning.value, ...LAYER_STREAMS.map((n) => layers.value[n])],
+  ([on]) => {
+    offLayers?.()
+    const names = LAYER_STREAMS.filter((n) => layers.value[n])
+    offLayers = on && names.length ? robot.subscribeStreams(names) : null
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => offLayers?.())
 
 const TOOLS = computed(() => [
   { id: null, icon: '✥', label: t('tools.pan'), enabled: true },
@@ -129,12 +148,16 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
       <MapCanvas
         v-model:follow="follow"
         :pose="pose"
-        :scan="robot.scan"
-        :map="robot.liveMap"
+        :scan="layers.scan ? robot.scan : null"
+        :map="layers.map ? robot.liveMap : null"
         :tool="tool"
-        :path="navReady ? robot.navPath : null"
-        :fms-path="fmsMode ? robot.fmsPath : null"
-        :nav="navReady ? robot.navStatus : null"
+        :path="navReady && layers.plan ? robot.navPath : null"
+        :local-plan="navReady && layers.localPlan ? robot.localPlan : null"
+        :particles="navRunning && layers.particles ? robot.particles : null"
+        :local-costmap="navReady && layers.localCostmap ? robot.localCostmap : null"
+        :global-costmap="navReady && layers.globalCostmap ? robot.globalCostmap : null"
+        :fms-path="fmsMode && layers.fmsRoute ? robot.fmsPath : null"
+        :nav="navReady && layers.goals ? robot.navStatus : null"
         :draft="navReady ? draft : null"
         @pick="onPick"
       >
@@ -156,6 +179,11 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
             <span class="font-mono text-base leading-none">{{ x.icon }}</span>
             <span class="hidden xl:inline">{{ x.label }}</span>
           </button>
+        </div>
+
+        <!-- Слои — под кнопками масштаба -->
+        <div v-if="hasNav" class="absolute top-[9.4rem] right-3">
+          <MapLayers :available="availableLayers" />
         </div>
 
         <!-- Подсказка к инструменту -->
