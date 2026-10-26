@@ -2,7 +2,7 @@ import { call } from './rosbridge'
 import { ApiError } from './errors'
 
 // Картографирование и библиотека карт (docs/ROS_INTERFACES.md §3, §5).
-// Сервисы — через rosbridge, файлы карт — по HTTP (/files, nginx робота).
+// Сервисы — через rosbridge, файлы карт — по HTTP (/files, веб-сервер робота compass_web).
 
 const SAVE_TIMEOUT_S = 30 // posegraph большой карты пишется долго
 
@@ -40,7 +40,7 @@ export async function fetchMapFile(id, file, version = '') {
 }
 
 /**
- * Импорт: файлы кладём в /files/uploads/{uploadId}/ (PUT в nginx), потом робот их регистрирует.
+ * Импорт: файлы кладём в /files/uploads/{uploadId}/ (PUT в compass_web), потом робот их регистрирует.
  * files — { 'map.yaml': Uint8Array, 'map.pgm': …, 'map.posegraph'?: …, 'map.data'?: … }.
  */
 export async function importMap(name, files) {

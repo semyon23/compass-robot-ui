@@ -13,7 +13,7 @@
    готовое.
 3. **Каждый этап сначала проверяется без UI** — `ros2 service call`, `ros2 topic echo`. Работает
    в CLI — подключаем UI.
-4. **UI не ждёт робот.** UI разрабатывается против симуляции (`compass_bringup sim.launch.py`):
+4. **UI не ждёт робот.** UI разрабатывается против симуляции (`compass_sim sim.launch.py`):
    там настоящие compass_core, rosbridge и Nav2, мок не нужен.
 5. **Этап закончен**, когда выполнен его сценарий проверки целиком.
 
@@ -34,7 +34,7 @@
     (4.2.1) требует rosidl новее, чем в Jazzy, и не запускается. Запуск — своим launch-файлом:
     `actions_glob` — параметр ноды, штатный launch его не пробрасывает;
   - `task_orchestrator_msgs`, `task_orchestrator_core` 1.0.0 (`~/Downloads/ros2_task_orchestrator-master`).
-- [ ] `sudo apt install ros-jazzy-twist-mux nginx`.
+- [x] `sudo apt install ros-jazzy-twist-mux` (nginx не нужен — веб-сервер `compass_web`).
 
 UI:
 - [x] API-слой на своём клиенте rosbridge (`src/api/rosbridge.js`); старый мок REST/WS удалён.
@@ -90,8 +90,8 @@ UI: Картографирование на `/map` (OccupancyGrid, CBOR), экр
 меняется), выход с несохранённой картой — подтверждение, «Сохранить и завершить», продолжение
 карты, импорт копии, переименование, удаление; удалить строящуюся карту нельзя.
 
-Осталось: продолжение карты требует поставить робота в точку её начала — в срезе 3 можно
-стартовать с позы локализации (`map_start_pose`).
+Продолжение карты: если это активная карта и робот локализован — с его текущей позы; иначе
+робота ставят в точку начала карты.
 
 ---
 
@@ -104,15 +104,16 @@ UI: Картографирование на `/map` (OccupancyGrid, CBOR), экр
       активной карте), готовность по `lifecycle_manager_*/is_active`, падение → `STACK_FAILED`.
 - [x] `/robot/maps/activate` — активная карта (+ поза), переживает перезапуск; локализация по
       `/amcl_pose` в `status.localization`.
-- [x] task_orchestrator с `tasks.yaml` (§4.2) в `robot.launch.py`, история в `{data_dir}/tasks.db`.
+- [x] task_orchestrator с `tasks.yaml` (§4.2) в `core.launch.py`, история в `{data_dir}/tasks.db`.
 - [x] `/compass/nav/start`, `/compass/nav/cancel`, `/compass/nav_status`, параметры допуска (§4.3),
       отмена цели ненулевым teleop и сменой режима, `/compass/stop` → `/task_orchestrator/stop`.
 
 UI: панель «Навигация» (активная карта, локализация, цель, маршрут), инструменты на карте
 (поза, цель, маршрут), путь Nav2 (`/plan`).
 
-Осталось: блокировка twist_mux по СТОП (вместе с агентом), различать `NO_PATH` / `STUCK`
-(оркестратор 1.0.0 не передаёт код ошибки Nav2).
+Осталось: различать `NO_PATH` / `STUCK` (оркестратор 1.0.0 не передаёт код ошибки Nav2).
+Сделано позже: СТОП блокирует twist_mux и снимается в Compass; лента событий переживает
+перезагрузку; продолжение активной карты — с позы локализации.
 
 ---
 
@@ -157,8 +158,10 @@ UI: «Управляет флот», «Передать флоту», источ
 
 ## Развёртывание на ПК робота — M (по ходу этапов 1–3)
 
-- [ ] nginx (§5): статика UI, `/files`, прокси `/rosbridge`.
-- [ ] systemd: базовый стек (драйверы), rosbridge, task_orchestrator, compass_core, nginx.
+- [x] Веб-сервер `compass_web` (§5) вместо nginx: статика UI, `/files`, прокси `/rosbridge`.
+- [x] Запуск по слоям: драйверы робота отдельно; `compass.launch.py robot_config:=…` =
+      `core.launch.py` + `web.launch.py`; конфиги робота — отдельным каталогом (образец `compass_sim/config`).
+- [ ] systemd: драйверы → `core.launch.py` → `web.launch.py`; порт 80 — `CAP_NET_BIND_SERVICE`.
 - [ ] Перенос с симуляции на робот: свой bringup драйверов, URDF, лидар, одометрия, параметры Nav2.
 
 ## Потом

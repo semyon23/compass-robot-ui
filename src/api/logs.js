@@ -1,10 +1,10 @@
 import { zipSync } from 'fflate'
 import { ApiError } from './errors'
 
-// Файлы логов по HTTP (docs/ROS_INTERFACES.md §5, nginx робота):
+// Файлы логов по HTTP (docs/ROS_INTERFACES.md §5, веб-сервер робота compass_web):
 //   /files/ros_log/ — логи ROS 2 (ROS_LOG_DIR): файл на процесс ноды + папка на запуск с launch.log;
 //   /files/logs/    — журнал WARN+ compass_core, файл на день.
-// Каталог отдаётся JSON-листингом nginx: [{ name, type: file | directory, mtime, size }].
+// Каталог отдаётся JSON-листингом (формат nginx autoindex): [{ name, type: file | directory, mtime, size }].
 
 async function list(url) {
   const res = await fetch(url)
