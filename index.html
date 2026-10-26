@@ -205,6 +205,14 @@
         text-transform: uppercase;
         color: var(--cs-text);
       }
+      .cs-tagline {
+        position: relative;
+        margin-top: -18px;
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        color: var(--cs-text);
+        animation: cs-rise 600ms 200ms ease both;
+      }
       .cs-progress {
         position: relative;
         width: 220px;
@@ -367,6 +375,7 @@
         <span class="cs-bar"></span>
         <span class="cs-sub">Robot<br />Control</span>
       </div>
+      <div class="cs-tagline" id="cs-splash-tagline"></div>
       <div class="cs-progress"></div>
       <div class="cs-status" id="cs-splash-status"></div>
     </div>
@@ -388,8 +397,28 @@
         }
         robot.src = '%BASE_URL%splash/robot.svg'
 
-        var texts = ['Connecting to robot', 'Building map', 'Planning route', 'Robot ready']
-        el.setAttribute('aria-label', 'Loading Compass')
+        // Язык и гамма — те же ключи, что у locales/index.js и useTheme.
+        var get = function (key) {
+          try {
+            return localStorage.getItem(key)
+          } catch (_) {
+            return null
+          }
+        }
+        var ru = (get('compass.locale') || ((navigator.language || '').toLowerCase().indexOf('ru') === 0 ? 'ru' : 'en')) === 'ru'
+        var T = ru
+          ? { label: 'Загрузка Compass', tagline: 'Управляй своим роботом', texts: ['Подключаемся к роботу', 'Строим карту', 'Прокладываем маршрут', 'Робот готов'] }
+          : { label: 'Loading Compass', tagline: 'Control your robot', texts: ['Connecting to robot', 'Building map', 'Planning route', 'Robot ready'] }
+        var texts = T.texts
+        document.documentElement.lang = ru ? 'ru' : 'en'
+        el.setAttribute('aria-label', T.label)
+        document.getElementById('cs-splash-tagline').textContent = T.tagline
+        // Серая гамма (Настройки → Интерфейс) — логотип и полоса загрузки серые, как в интерфейсе.
+        if (get('compass.scheme') === 'gray') {
+          var dark = document.documentElement.classList.contains('dark')
+          el.style.setProperty('--cs-word-a', dark ? '#d4d8dd' : '#272b31')
+          el.style.setProperty('--cs-word-b', dark ? '#8e959f' : '#6c737d')
+        }
 
         // Подписи идут в такт анимации (цикл 7 с, см. cs-drive).
         status.textContent = texts[0]
