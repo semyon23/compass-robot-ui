@@ -31,7 +31,7 @@ const props = defineProps({
   localCostmap: { type: Object, default: null }, // карты стоимости Nav2 — как map
   globalCostmap: { type: Object, default: null },
   fmsPath: { type: Array, default: null }, // маршрут order'а fms [[x, y], ...] — узлы графа
-  // Текущая цель/маршрут из nav_status: { kind, poses, index, state }
+  // Текущая цель/маршрут из nav_status: { kind, poses, index, state, missed: [номера точек с 1] }
   nav: { type: Object, default: null },
   draft: { type: Array, default: null }, // маршрут в редактировании [{ x, y, theta }]
 })
@@ -210,7 +210,7 @@ function drawFmsPath(c) {
   ctx.restore()
 }
 
-/** Активная цель или маршрут: пройденные точки серые, текущая — яркая. */
+/** Активная цель или маршрут: пройденные точки серые, текущая — яркая, недостигнутые — красные с крестом. */
 function drawNav(c) {
   const n = props.nav
   if (!n?.poses?.length) return
@@ -219,11 +219,28 @@ function drawNav(c) {
     polyline(n.poses, active ? c.nav : c.done, [6, 6], 2)
   }
   n.poses.forEach((p, i) => {
+    const missed = n.missed?.includes(i + 1) || (n.state === 'failed' && i >= n.index)
     const passed = !active || i < n.index
-    const color = passed && !(n.state === 'succeeded' && i === n.poses.length - 1) ? c.done : c.nav
+    const color = missed ? c.missed : passed && !(n.state === 'succeeded' && i === n.poses.length - 1) ? c.done : c.nav
     if (n.kind === 'goal') drawGoalFlag(p, color)
     else drawWaypoint(p, i + 1, color, c, active && i === n.index)
+    if (missed) drawCross(p, color)
   })
+}
+
+function drawCross(p, color) {
+  const [px, py] = toScreen(p.x, p.y)
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2.5
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(px + 9, py - 17)
+  ctx.lineTo(px + 17, py - 9)
+  ctx.moveTo(px + 17, py - 17)
+  ctx.lineTo(px + 9, py - 9)
+  ctx.stroke()
+  ctx.restore()
 }
 
 function drawDraft(c) {

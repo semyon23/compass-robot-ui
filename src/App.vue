@@ -5,6 +5,7 @@ import { useMediaQuery } from '@vueuse/core'
 import AppSidebar from './components/AppSidebar.vue'
 import AppTopbar from './components/AppTopbar.vue'
 import OfflineBanner from './components/OfflineBanner.vue'
+import NavNotifier from './components/NavNotifier.vue'
 import { useTheme } from './composables/useTheme'
 import { useRobotStore } from './stores/robot'
 
@@ -37,6 +38,7 @@ const themeOverrides = computed(() => ({
   <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides">
     <NDialogProvider>
       <NMessageProvider placement="bottom-right">
+        <NavNotifier />
         <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
           <AppSidebar :collapsed="collapsed" @toggle="collapsed = !collapsed" />
           <div class="flex min-w-0 flex-1 flex-col overflow-hidden">

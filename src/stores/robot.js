@@ -98,6 +98,14 @@ export const useRobotStore = defineStore('robot', () => {
   const scan = ref(null)
   const liveMap = ref(null) // /map: { width, height, resolution, origin, data }
   const navStatus = ref(null) // /compass/nav_status: текущая или последняя цель Compass
+  // Недостигнутые точки маршрута (номера с 1) — из события NAV_WAYPOINTS_MISSED: { goalId, points }.
+  const navMissed = ref(null)
+  // Для строки движения: цели, которые шли при открытой странице (итог показываем только им), закрытые
+  // итоги и наибольшее расстояние до конца текущей цели (полоса прогресса). В store — чтобы пережить
+  // уход с экрана «Управление».
+  const navSeen = ref(new Set())
+  const navDismissed = ref(new Set())
+  const navMaxDist = ref(0)
   const navPath = ref([]) // /plan: путь планировщика Nav2
   const fms = ref(null) // /vda5050/status: работа с fms; null — агента нет
   const fmsPath = ref([]) // /vda5050/path: маршрут order'а fms
@@ -249,6 +257,9 @@ export const useRobotStore = defineStore('robot', () => {
 
   function onEvent(msg) {
     const ev = eventOf(msg)
+    if (ev.code === 'NAV_WAYPOINTS_MISSED' && navStatus.value) {
+      navMissed.value = { goalId: navStatus.value.goalId, points: String(ev.details.points || '').split(',').map(Number) }
+    }
     events.value = [ev, ...events.value.filter((e) => e.id !== ev.id)].slice(0, MAX_EVENTS)
   }
 
@@ -300,6 +311,14 @@ export const useRobotStore = defineStore('robot', () => {
             error: msg.error_code ? { code: msg.error_code, message: msg.error_message } : null,
           }
         : null
+      const n = navStatus.value
+      if (n?.state === 'active') {
+        if (!navSeen.value.has(n.goalId)) {
+          navSeen.value = new Set([...navSeen.value, n.goalId])
+          navMaxDist.value = 0
+        }
+        if (n.distanceRemaining != null) navMaxDist.value = Math.max(navMaxDist.value, n.distanceRemaining)
+      }
     },
     bt: (msg) => {
       const running = new Set(btRunning.value)
@@ -369,6 +388,8 @@ export const useRobotStore = defineStore('robot', () => {
     ros.subscribe('/compass/events', 'robot_interfaces/msg/Event', onEvent)
     ros.subscribe('/compass/config/changed', 'robot_interfaces/msg/ConfigChanged', loadMotionLimits)
     ros.subscribe('/vda5050/status', 'robot_interfaces/msg/VdaStatus', onFmsStatus)
+    // Цель Compass — на всех экранах: строка движения, итог и уведомление о завершении.
+    ros.subscribe(STREAMS.nav.topic, STREAMS.nav.type, streamHandlers.nav)
     ros.onOpen(() => {
       loadInfo()
       loadEvents()
@@ -407,6 +428,10 @@ export const useRobotStore = defineStore('robot', () => {
     scan,
     liveMap,
     navStatus,
+    navMissed,
+    navSeen,
+    navDismissed,
+    navMaxDist,
     navPath,
     navActivity,
     fms,

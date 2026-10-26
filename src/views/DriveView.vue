@@ -9,6 +9,7 @@ import JoystickCard from '../components/JoystickCard.vue'
 import NavPanel from '../components/NavPanel.vue'
 import FmsCard from '../components/FmsCard.vue'
 import MapLayers from '../components/MapLayers.vue'
+import MotionStrip from '../components/MotionStrip.vue'
 import { MAP_LAYERS, useMapLayers } from '../composables/useMapLayers'
 import { useRobotStore } from '../stores/robot'
 import { useSubscription } from '../composables/useSubscription'
@@ -19,7 +20,7 @@ const { t } = useI18n()
 const message = useMessage()
 const robot = useRobotStore()
 
-useSubscription(['pose', 'scan', 'path', 'nav', 'bt', 'fmsPath'])
+useSubscription(['pose', 'scan', 'path', 'bt', 'fmsPath'])
 
 const follow = ref(true)
 const joystickCard = ref(null)
@@ -41,6 +42,12 @@ const navReady = computed(() => hasNav.value && navRunning.value && robot.status
 const localized = computed(() => robot.status?.localization?.status === 'ok')
 // Работа с fms: маршрут order'а на карте и карточка fms в панели.
 const fmsMode = computed(() => ['AUTOMATIC', 'INTERVENED'].includes(robot.status?.mode))
+// Цель на карте: с недостигнутыми точками маршрута.
+const navOnMap = computed(() => {
+  const n = robot.navStatus
+  const m = robot.navMissed
+  return n && m?.goalId === n.goalId ? { ...n, missed: m.points } : n
+})
 // Маршрут fms — в списке слоёв, только когда есть агент VDA 5050.
 const availableLayers = computed(() => MAP_LAYERS.filter((key) => key !== 'fmsRoute' || robot.fms))
 const canCommand = computed(
@@ -157,7 +164,7 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
         :local-costmap="navReady && layers.localCostmap ? robot.localCostmap : null"
         :global-costmap="navReady && layers.globalCostmap ? robot.globalCostmap : null"
         :fms-path="fmsMode && layers.fmsRoute ? robot.fmsPath : null"
-        :nav="navReady && layers.goals ? robot.navStatus : null"
+        :nav="navReady && layers.goals ? navOnMap : null"
         :draft="navReady ? draft : null"
         @pick="onPick"
       >
@@ -184,6 +191,11 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
         <!-- Слои — под кнопками масштаба -->
         <div v-if="hasNav" class="absolute top-[9.4rem] right-3">
           <MapLayers :available="availableLayers" />
+        </div>
+
+        <!-- Что робот делает сейчас: цель, маршрут или задание fms -->
+        <div class="pointer-events-none absolute inset-x-3 bottom-10 flex justify-center">
+          <MotionStrip class="pointer-events-auto" />
         </div>
 
         <!-- Подсказка к инструменту -->
