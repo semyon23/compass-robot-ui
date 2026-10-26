@@ -9,6 +9,8 @@ const KEYS = {
   back: ['KeyS', 'ArrowDown'],
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
+  strafeLeft: ['KeyQ'], // вбок — только у holonomic-робота
+  strafeRight: ['KeyE'],
 }
 const ALL_KEYS = new Set(Object.values(KEYS).flat())
 
@@ -21,40 +23,47 @@ const ALL_KEYS = new Set(Object.values(KEYS).flat())
  * - Пробел — СТОП.
  *
  * limits — ref { linear, angular } (м/с, рад/с) с учётом ползунка скорости.
+ * holonomic — робот ездит боком (меканум, омни): Q/E — вбок; strafe — джойстик по горизонтали
+ * двигает вбок, а не поворачивает.
  */
-export function useTeleop({ enabled, limits }) {
+export function useTeleop({ enabled, limits, holonomic, strafe }) {
   const robot = useRobotStore()
   const joystick = ref({ x: 0, y: 0 })
   const pressed = ref(new Set())
   let timer = null
   let sending = false
 
-  // Вектор ввода: джойстик важнее клавиатуры.
+  // Вектор ввода: x — поворот, y — вперёд, s — вбок (вправо +). Джойстик важнее клавиатуры.
   const input = computed(() => {
     const j = joystick.value
-    if (j.x || j.y) return j
+    if (j.x || j.y) return strafe.value ? { x: 0, y: j.y, s: j.x } : { x: j.x, y: j.y, s: 0 }
     const has = (dir) => KEYS[dir].some((k) => pressed.value.has(k))
     return {
       x: (has('right') ? 1 : 0) - (has('left') ? 1 : 0),
       y: (has('forward') ? 1 : 0) - (has('back') ? 1 : 0),
+      s: (has('strafeRight') ? 1 : 0) - (has('strafeLeft') ? 1 : 0),
     }
   })
 
   const command = computed(() => {
-    if (!enabled.value) return { linear: 0, angular: 0 }
-    const { x, y } = input.value
-    // Вправо — поворот по часовой, то есть отрицательная угловая скорость (REP-103).
-    return { linear: round(y * limits.value.linear), angular: round(-x * limits.value.angular) }
+    if (!enabled.value) return { linear: 0, angular: 0, lateral: 0 }
+    const { x, y, s } = input.value
+    // Вправо — поворот по часовой и движение вбок вправо: отрицательные angular и lateral (REP-103).
+    return {
+      linear: round(y * limits.value.linear),
+      angular: round(-x * limits.value.angular),
+      lateral: holonomic.value ? round(-s * limits.value.linear) : 0,
+    }
   })
 
   function tick() {
     const cmd = command.value
-    const moving = cmd.linear !== 0 || cmd.angular !== 0
+    const moving = cmd.linear !== 0 || cmd.angular !== 0 || cmd.lateral !== 0
     if (moving) {
-      robot.sendTeleop(cmd.linear, cmd.angular)
+      robot.sendTeleop(cmd.linear, cmd.angular, cmd.lateral)
       sending = true
     } else if (sending) {
-      robot.sendTeleop(0, 0)
+      robot.sendTeleop(0, 0, 0)
       sending = false
     }
   }
@@ -107,7 +116,7 @@ export function useTeleop({ enabled, limits }) {
     window.removeEventListener('blur', clearInput)
     document.removeEventListener('visibilitychange', onVisibility)
     clearInterval(timer)
-    if (sending) robot.sendTeleop(0, 0)
+    if (sending) robot.sendTeleop(0, 0, 0)
   })
 
   return { joystick, pressed, command }
