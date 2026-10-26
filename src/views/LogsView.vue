@@ -27,7 +27,6 @@ const GROUPS = {
   localization: /amcl|map_server|lifecycle_manager_localization/,
   slam: /slam/,
   compass: /compass|rosbridge|twist_mux/,
-  orchestrator: /task_orchestrator/,
   vda5050: /vda5050/,
 }
 

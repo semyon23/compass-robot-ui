@@ -322,8 +322,7 @@ export default {
     restart: 'Перезапустить',
     failed: 'Навигация не запустилась или остановилась с ошибкой. Подробности — в событиях на «Обзоре».',
     needService: 'Цели и маршруты — в сервисном режиме',
-    err_NAV_FAILED: 'Nav2 не смог доехать: нет пути или робот застрял',
-    err_TIMEOUT: 'Не доехал за отведённое время',
+    err_NAV_FAILED: 'Nav2 не смог доехать',
   },
   maps: {
     newMap: 'Новая карта',
@@ -368,7 +367,6 @@ export default {
     group_localization: 'Локализация',
     group_slam: 'SLAM',
     group_compass: 'Compass',
-    group_orchestrator: 'Оркестратор',
     group_vda5050: 'Агент VDA 5050',
     count: 'строк: {n}',
     pause: 'Пауза',

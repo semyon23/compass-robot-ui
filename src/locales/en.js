@@ -322,8 +322,7 @@ export default {
     restart: 'Restart',
     failed: 'Navigation did not start or stopped with an error. See events on the Overview.',
     needService: 'Goals and routes are available in Service mode',
-    err_NAV_FAILED: 'Nav2 could not get there: no path or the robot is stuck',
-    err_TIMEOUT: 'Did not arrive in time',
+    err_NAV_FAILED: 'Nav2 could not get there',
   },
   maps: {
     newMap: 'New map',
@@ -368,7 +367,6 @@ export default {
     group_localization: 'Localization',
     group_slam: 'SLAM',
     group_compass: 'Compass',
-    group_orchestrator: 'Orchestrator',
     group_vda5050: 'VDA 5050 agent',
     count: 'lines: {n}',
     pause: 'Pause',

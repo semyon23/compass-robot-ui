@@ -1,7 +1,7 @@
 # Compass — интерфейсы UI ↔ робот (rosbridge)
 
-Контракт v1.3-черновик, 2026-10-24: режимы работы VDA 5050 (§3.1), агент VDA — сосед compass_core (§3.6),
-оркестратор — для сервисных целей и функций робота (§4).
+Контракт v1.4-черновик, 2026-10-27: режимы работы VDA 5050 (§3.1), агент VDA — сосед compass_core (§3.6),
+сервисные цели compass_core ставит прямо в Nav2 (§4).
 Архитектура всего бортового ПО — `~/fms_robot/ARCHITECTURE.md`; план работ — там же, §8
 (этапы в [ROADMAP.md](ROADMAP.md) — более ранняя версия). Заменяет [archive/API_CONTRACT_v0.md](archive/API_CONTRACT_v0.md) (REST + свой WS).
 Источник истины для обеих сторон: `compass-ui` (Vue + roslibjs) и `compass_core` (C++, rclcpp).
@@ -28,20 +28,18 @@ dist/ UI     /var/lib/robot/                rosbridge_server (apt, 2.7.x)
              compass_core ◄──── /robot/operating_mode, /robot/maps/activate ────► vda5050_adapter ── MQTT ──► fms
              режим, стеки, карты,                                                 (протокол VDA, движение
              конфиг, джойстик, СТОП                                                по рёбрам напрямую в Nav2)
-                 │ сервисные цели, функции                      функции робота │
+                 │ сервисные цели (SERVICE)                                   │ FollowPath
                  ▼                                                            ▼
-             ros2_task_orchestrator ───────► Nav2 (цели SERVICE), docking, лифт, зарядка
+             Nav2: navigate_to_pose, follow_waypoints, navigate_through_poses, controller_server
 ```
 
 - **rosbridge** — всё «живое» для UI: состояние, поза, скан, карта, путь, события, команды.
 - **compass_web** — веб-сервер робота (вместо nginx): статика UI, файлы карт и логов, загрузка
   при импорте, прокси WebSocket rosbridge. Снаружи робота открыт только он.
-- **compass_core** — сервисный узел. UI ходит в Nav2, slam_toolbox и оркестратор **через него**,
+- **compass_core** — сервисный узел. UI ходит в Nav2 и slam_toolbox **через него**,
   кроме стандартных топиков `/map`, `/plan`, `/initialpose`.
 - **vda5050_adapter** — работа с fms. Для compass_core **сосед**, а не клиент: общаются через режим
   работы и смену карты (§3.6). UI видит агента через два его топика (`/vda5050/status`, `/vda5050/path`).
-- **ros2_task_orchestrator** (§4) — исполняет сервисные цели Compass и функции робота
-  (докинг, лифт, зарядка) — для Compass и для агента.
 
 Кто командует роботом, определяет **режим работы** (§3.1) — `operatingMode` VDA 5050.
 
@@ -58,14 +56,10 @@ compass_core
 ├── Control Lease    аренда управления             ◄─ /compass/control/*, /compass/control/heartbeat
 ├── Teleop Gate      проверка аренды, лимиты       ◄─ /compass/teleop  ─► cmd_vel_teleop
 ├── Map Library      карты на диске, активная карта ◄─ /compass/mapping/*, /compass/maps/*, /robot/maps/activate
-├── Task Gateway     сервисные цели через оркестратор ◄─ /compass/nav/* ─► /compass/nav_status
+├── Navigation       сервисные цели в Nav2 (§4)    ◄─ /compass/nav/* ─► /compass/nav_status
 ├── Config           схема, применение, история    ◄─ /compass/config/*
 └── Status           сводка, поза, скан, события   ─► /compass/status, /compass/pose, …
-                     + параметры допуска task_orchestrator (§4.3)
 ```
-
-Не путать: **Stack Manager** — модуль compass_core, запускает и гасит стеки режимов;
-**task_orchestrator** — отдельный готовый пакет, исполняет сервисные цели и функции робота.
 
 Команды с ответом — **сервисы**; потоки без ответа (джойстик, heartbeat, начальная поза) —
 **топики**. Ответ сервиса означает «принято / отказ»; фактическое состояние UI всегда берёт из
@@ -189,7 +183,7 @@ compass_core кладёт **код ошибки в `message`** (например
 | `/compass/get_info` | `GetInfo` | — | имя, серийник, версии, возможности |
 | `/robot/set_operating_mode` | `SetOperatingMode` | — | сменить режим работы (асинхронно, ход — в `status.transition`) |
 | `/robot/maps/activate` | `ActivateMap` | — | загрузить карту для локализации (Compass в `SERVICE`; агент по команде fms) |
-| `/compass/stop` | `std_srvs/srv/Trigger` | — | СТОП: блокировка twist_mux, обнулить teleop, `/task_orchestrator/stop` (§4.5) |
+| `/compass/stop` | `std_srvs/srv/Trigger` | — | СТОП: блокировка twist_mux, обнулить teleop, отмена цели Compass (§4.5) |
 | `/compass/stop/release` | `std_srvs/srv/Trigger` | — | снять СТОП |
 | `/compass/control/acquire` | `AcquireControl` | — | взять / перехватить управление |
 | `/compass/control/release` | `ReleaseControl` | владелец | отдать |
@@ -315,8 +309,7 @@ UI ─/compass/teleop─► compass_core ─cmd_vel_teleop─► twist_mux ─cm
   в `cmd_vel_teleop` при каждом полученном `TeleopCommand`.
 - **Сторожевой таймер — у twist_mux**: `timeout: 0.5` на входе teleop. Перестали приходить
   команды (отпустили джойстик, обрыв связи) — робот стоит.
-- Ненулевой teleop во время сервисной цели — compass_core **отменяет её** через
-  `/task_orchestrator/cancel_tasks` (`NavStatus.state = canceled`).
+- Ненулевой teleop во время сервисной цели — compass_core **отменяет её** (`NavStatus.state = canceled`).
 - В `AUTOMATIC` Nav2 командует агент (`FollowPath` в `cmd_vel_nav`); джойстик там запрещён режимом.
 
 Пример `twist_mux`:
@@ -331,30 +324,16 @@ twist_mux:
 ### 3.4 Цели и маршруты
 
 Сервисные цели — только в режиме `SERVICE` (свободная езда через планировщик Nav2; в работе с fms
-робот ездит только по рёбрам — это делает агент, мимо оркестратора).
+робот ездит только по рёбрам — это делает агент, `FollowPath` напрямую).
 
 `NavStart`: `kind` = `goal` (одна поза) или `route` (`mode` = `waypoints` | `through_poses`).
-compass_core проверяет режим и аренду, превращает запрос в задачу `task_orchestrator` (§4.4) и ведёт
-`/compass/nav_status` по её прогрессу:
+compass_core проверяет режим и аренду, ставит цель в Nav2 (§4) и ведёт `/compass/nav_status`
+по её прогрессу.
 
-| kind / mode | Задача task_orchestrator | Action Nav2 |
-|---|---|---|
-| `goal` | `nav2/navigate_to_pose` | `navigate_to_pose` |
-| `route` / `waypoints` | `nav2/follow_waypoints` | `follow_waypoints` — остановка в каждой точке |
-| `route` / `through_poses` | `nav2/navigate_through_poses` | `navigate_through_poses` — без остановки |
-
-- **Ответ `NavStart`** — по первому feedback (задача началась), по результату (отказ `REJECTED`
-  или мгновенное завершение) или через 3 с, если задача ждёт в очереди: `success` + `goal_id`
-  (= `task_id`, его задаёт compass_core) или отказ с нашим кодом (§4.4). Оркестратор принимает
-  любой goal action'а — отказ приходит результатом.
-- **Новая цель заменяет предыдущую**: сам оркестратор цели не вытесняет (конфликт группы — отказ),
-  поэтому compass_core отменяет свою прежнюю цель (`cancel_tasks`) и ставит новую с
-  `queue_on_conflict: true` — она ждёт, пока прежняя освободит группу `navigation`.
-- Перед целью: режим `SERVICE`, действующая аренда, стек навигации запущен, локализация `ok`;
-  иначе `MODE_NOT_ALLOWED` / `CONTROL_LOCKED` с причиной.
-- `NavStatus.error_code` при `failed`: `TIMEOUT` (`TASK_TIMEOUT`, `DEADLINE_EXCEEDED`) или
-  `NAV_FAILED` — всё остальное. **`NO_PATH` и `STUCK` различить нельзя**: при неудаче Nav2
-  оркестратор 1.0.0 отдаёт только «action finished with status 6», без кода ошибки Nav2.
+- Перед целью: режим `SERVICE`, действующая аренда, нет СТОП, стек навигации запущен, локализация
+  `ok`, заряд не ниже `battery.min_task_percent`; иначе `MODE_NOT_ALLOWED` / `CONTROL_LOCKED` с причиной.
+- Новая цель заменяет предыдущую (§4.2).
+- `NavStatus.error_code` при `failed`: `NO_PATH`, `STUCK` или `NAV_FAILED` — по коду ошибки Nav2 (§4.4).
 
 ### 3.5 Конфигурация — `JsonCall`
 
@@ -395,7 +374,7 @@ compass_core проверяет режим и аренду, превращает
 | Ключ | Что делает |
 |---|---|
 | `battery.warn_percent` | событие `BATTERY_LOW` |
-| `battery.min_task_percent` | новые задачи оркестратора не принимаются: compass_core собирает `{data_dir}/config/tasks.yaml` из `compass_bringup/config/tasks.yaml` с `admission.min_battery_percent` и вызывает `/task_orchestrator/reload_config` |
+| `battery.min_task_percent` | новые цели Compass не принимаются (`NavStart` → `MODE_NOT_ALLOWED`). Для заданий fms агент пока порог не проверяет |
 | `battery.critical_percent` | текущая цель Compass отменяется, событие `BATTERY_CRITICAL` (позже — робот сам едет на зарядку) |
 
 Отложено: раздел `fms` (брокер MQTT, `interfaceName`; пароль — только в окружении агента,
@@ -405,13 +384,12 @@ compass_core проверяет режим и аренду, превращает
 ### 3.6 Агент VDA 5050 и Compass
 
 Агент (`vda5050_adapter`) — **сосед** compass_core, а не его клиент. Протокол VDA и движение по
-рёбрам — целиком в агенте (`~/fms_robot/README.md`). Общих интерфейсов три:
+рёбрам — целиком в агенте (`~/fms_robot/README.md`). Общих интерфейсов два:
 
 | Интерфейс | Кто → кому | Зачем |
 |---|---|---|
 | `/robot/operating_mode` | compass_core → агент | режим для `state.operatingMode`; агент принимает order'а только в `AUTOMATIC` (в `INTERVENED` order сохраняется) |
 | `/robot/maps/activate` | агент → compass_core | `enableMap`, `initializePosition` с другой картой. Другая карта: в статусе сразу `map` = новая, `localization.status` = `none`, `state` = `switching` до перезапуска навигации; `enableMap` агент завершает, когда снова `ready` |
-| `/task_orchestrator/execute_task` | агент → оркестратор | функции робота в action'ах VDA (`pick`, `drop`, `startCharging`), `source: fms` |
 
 Для UI агент публикует:
 - **`/vda5050/status`** (`VdaStatus`) — связь с брокером, `orderId`, `lastNodeId`, едет / пауза, ошибки;
@@ -427,191 +405,88 @@ compass_core) — fms узнаёт об остановке по протокол
 
 ---
 
-## 4. Исполнитель задач — ros2_task_orchestrator
+## 4. Сервисные цели — action'ы Nav2
 
-### 4.1 Что это и зачем
+### 4.1 Как устроено
 
-**ros2_task_orchestrator** 1.0.0 (Apache-2.0, Python): общая точка входа для задач
-поверх существующих action'ов и сервисов. Проверено 2026-10-02: `task_orchestrator_msgs` и
-`task_orchestrator_core` собираются на Jazzy, 135 тестов ядра проходят, задача через
-`/task_orchestrator/execute_task` выполняется и попадает в `/task_orchestrator/results`.
+Сервисные цели compass_core ставит **прямо в Nav2** — типизированными action-клиентами
+(`navigation.cpp`). До 2026-10-27 между ними стоял `ros2_task_orchestrator` (Python); убран: из
+него использовались три action'а Nav2, он не передавал коды ошибок Nav2, не умел заменять цель и
+съедал ~60 % CPU во время езды. Допуск (режим, аренда, локализация, СТОП, заряд) compass_core и
+так проверял сам.
 
-Что через него идёт:
-- **сервисные цели Compass** (`navigate_to_pose`, `follow_waypoints`, `navigate_through_poses`) —
-  только в `SERVICE`;
-- **функции робота** — докинг, лифт, зарядка: из Compass (кнопки в `SERVICE`) и из агента
-  (action'ы VDA в `AUTOMATIC`, `source: fms`).
+| kind / mode | Action Nav2 | Сервер |
+|---|---|---|
+| `goal` | `/navigate_to_pose` (`NavigateToPose`) | bt_navigator |
+| `route` / `waypoints` | `/follow_waypoints` (`FollowWaypoints`) — остановка в каждой точке | waypoint_follower |
+| `route` / `through_poses` | `/navigate_through_poses` (`NavigateThroughPoses`) — без остановки | bt_navigator |
 
-Что берём из него:
-- **конфликты** — `blocking` + `task_group` (например, докинг и лифт не одновременно);
-- **допуск** — задача не стартует в неподходящем режиме, без локализации, при E-stop;
-- **прогресс** — feedback Nav2 в ответе на задачу и в `/task_orchestrator/feedback`;
-- **история** — записи задач и события, с SQLite переживают перезапуск.
+Позы `Pose2D` → `PoseStamped` (`frame_id` = `map_frame`, θ → кватернион, stamp нулевой — последний TF).
 
-Мимо него: движение агента по рёбрам (`FollowPath`, `Spin` напрямую — нужен быстрый отклик),
-режим и стеки, джойстик.
+Функции робота (докинг, лифт, зарядка), когда появятся, — так же: типизированный клиент своего
+action'а (для докинга — `DockRobot` из Nav2) в compass_core или в агенте.
 
-Что не берём: агентов и аренду миссий (`register_agent`, `claim_mission` — это для внешних
-планировщиков), паузу задач.
+### 4.2 Постановка и замена
 
-**Версию фиксируем** (сборка из исходников 1.0.0), обновляем осознанно.
+- **Ответ `NavStart`** — когда Nav2 принял цель: `success` + `goal_id` (его выдаёт compass_core).
+  Nav2 отклонил — `INTERNAL`; не ответил за 5 с — `INTERNAL` («Nav2 не ответил на цель»), а если
+  он примет её позже, compass_core её сразу отменит.
+- **Новая цель заменяет предыдущую**: compass_core отменяет прежнюю и отправляет новую через
+  0,3–0,8 с после того, как Nav2 её завершил. Сразу нельзя: `navigate_to_pose` и
+  `navigate_through_poses` делят один bt_navigator, а `follow_waypoints` отвечает «отменено»
+  раньше, чем bt_navigator закончил свою `navigate_to_pose`, — цель в эти миллисекунды
+  прерывается. Прежняя не завершилась за 5 с — `BUSY`.
+- Отмена, пришедшая раньше, чем Nav2 принял цель, выполняется сразу после приёма.
 
-### 4.2 Задачи (YAML, `tasks_config_path`)
+### 4.3 Прогресс
 
-```yaml
-tasks:
-  - task_name: nav2/navigate_to_pose
-    topic: /navigate_to_pose
-    msg_interface: nav2_msgs/action/NavigateToPose
-    task_server_type: action
-    blocking: true
-    cancel_on_stop: true
-    reentrant: false
-    task_group: navigation
-    resources: [base]
-    server_timeout: 5.0
-    result_timeout: 0.0            # без лимита: длинные маршруты
-    cancel_timeout: 5.0
-    admission:
-      allowed_robot_modes: [SERVICE]       # сервисные цели — только в SERVICE
-      requires_localization: true
-      allow_emergency_stop: false
-    tags: [nav2, motion]
+Feedback Nav2 → `/compass/nav_status`, не чаще 2 Гц:
 
-  - task_name: nav2/follow_waypoints
-    topic: /follow_waypoints
-    msg_interface: nav2_msgs/action/FollowWaypoints
-    # остальное — как у navigate_to_pose
-
-  - task_name: nav2/navigate_through_poses
-    topic: /navigate_through_poses
-    msg_interface: nav2_msgs/action/NavigateThroughPoses
-    # остальное — как у navigate_to_pose
-
-  # Функции робота (пример; список — когда станет ясно с механизмами)
-  - task_name: robot/dock
-    topic: /dock_robot
-    msg_interface: opennav_docking_msgs/action/DockRobot
-    task_server_type: action
-    blocking: true
-    cancel_on_stop: true
-    task_group: base
-    admission:
-      allowed_robot_modes: [AUTOMATIC, SERVICE]
-      requires_localization: true
-```
-
-`blocking` + общий `task_group` — одновременно активна одна задача группы.
-`admission.min_battery_percent` compass_core подставляет из `battery.min_task_percent` общего конфига (§3.5)
-при генерации `tasks.yaml` и после каждого его изменения вызывает `/task_orchestrator/reload_config`.
-
-Параметры ноды:
-```yaml
-task_orchestrator:
-  ros__parameters:
-    tasks_config_path: /opt/compass/config/tasks.yaml
-    mission_templates_path: /var/lib/robot/missions     # позже, для сценариев
-    task_record_limit: 1000
-    event_record_limit: 1000
-    storage:
-      enabled: true
-      sqlite_path: /var/lib/robot/tasks.db
-      retention_days: 30
-```
-
-### 4.3 Допуск: что compass_core сообщает оркестратору
-
-task_orchestrator проверяет задачу по своим параметрам. compass_core обновляет их
-(`/task_orchestrator/set_parameters`) **при каждом изменении**:
-
-| Параметр | Значение |
-|---|---|
-| `admission.robot_mode` | `/robot/operating_mode`; во время перехода — `SWITCHING` (новые задачи отклоняются) |
-| `admission.localization_ok` | `status.localization.status == ok` |
-| `admission.emergency_stop_active` | `status.estop` |
-| `admission.battery_percent` | `status.battery.percent` (если `present`) |
-
-При смене режима compass_core **сначала** ставит `robot_mode = SWITCHING` и отменяет активные
-задачи, не допустимые в новом режиме, **потом** переключает стеки.
-
-### 4.4 Как compass_core ставит задачу и читает прогресс
-
-**Запуск** — action-клиент `/task_orchestrator/execute_task` (`ExecuteTaskV1`):
-
-| Поле | Значение |
-|---|---|
-| `task_name` | §3.4 |
-| `source` | `compass` (агент — `fms`, CLI — `cli`) |
-| `operator_id` | `client_name` из аренды («Chrome · Linux») |
-| `metadata_json` | `{"client_id": "…"}` |
-| `task_data_json` | goal Nav2 в JSON, позы из `Pose2D` → `PoseStamped` (`frame_id: map`, θ → кватернион) |
-
-Пример `task_data_json` для `goal`:
-```json
-{ "pose": { "header": { "frame_id": "map" },
-            "pose": { "position": { "x": 5.0, "y": 2.0, "z": 0.0 },
-                      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 } } } }
-```
-Для `follow_waypoints` и `navigate_through_poses` — `{ "poses": [ PoseStamped, … ] }`.
-Поля goal и feedback сверены с `nav2_msgs` Jazzy (`ros2 interface show`, 2026-10-02).
-
-**Прогресс** — feedback action'а `execute_task` (то же, что в `/task_orchestrator/feedback`).
-Feedback Nav2 лежит в `feedback_json.backend`; в `/compass/nav_status` — не чаще 2 Гц:
-
-| Задача | Поля Nav2 → `NavStatus` |
+| Action | Поля Nav2 → `NavStatus` |
 |---|---|
 | `navigate_to_pose` | `distance_remaining`, `estimated_time_remaining` → `eta`, `number_of_recoveries` → `recoveries` |
 | `navigate_through_poses` | то же + `number_of_poses_remaining` → `index = poses.length − remaining` |
 | `follow_waypoints` | `current_waypoint` → `index`; расстояния в feedback нет → `distance_remaining = -1` (UI скрывает) |
 
-**Итог** — результат action'а `execute_task` (то же, что в `/task_orchestrator/results`):
+### 4.4 Итог и коды ошибок
 
-| status оркестратора | `NavStatus.state` |
-|---|---|
-| `RECEIVED`, `PENDING`, `QUEUED`, `IN_PROGRESS` | `active` |
-| `DONE` | `succeeded` |
-| `CANCELED` | `canceled` |
-| `ERROR`, `REJECTED` | `failed` |
+| Результат action'а | `NavStatus.state` | Событие |
+|---|---|---|
+| `SUCCEEDED` | `succeeded` | `NAV_GOAL_SUCCEEDED` или `NAV_WAYPOINTS_MISSED` |
+| `CANCELED` | `canceled` | `NAV_GOAL_CANCELED` |
+| `ABORTED` | `failed` | `NAV_GOAL_FAILED` (`code`, `nav2_code`) |
 
-**Коды ошибок** → наши:
+`error_code` результата Nav2 → `NavStatus.error_code` по сотням (`nav2_msgs/action`); bt_navigator
+передаёт коды серверов из `error_code_names` (`nav2.yaml`: `compute_path_error_code`,
+`follow_path_error_code`):
 
-| Откуда | Наш код |
-|---|---|
-| отказ при постановке: `POLICY_REJECTED` (допуск), `RESOURCE_CONFLICT` | ответ `NavStart`: `MODE_NOT_ALLOWED` |
-| отказ при постановке: `SERVER_UNAVAILABLE` (Nav2 не поднят) | ответ `NavStart`: `MODE_NOT_ALLOWED` |
-| `TASK_TIMEOUT`, `DEADLINE_EXCEEDED` | `NavStatus.error_code = TIMEOUT` |
-| прочее (Nav2 прервал цель, ошибка оркестратора) | `NAV_FAILED`, текст — в `error_message` |
+| Код Nav2 | Сервер | `NavStatus.error_code` |
+|---|---|---|
+| 2xx, 3xx | планировщик: нет пути, старт / цель в препятствии или вне карты | `NO_PATH` |
+| 1xx, 7xx | контроллер (нет прогресса, нет допустимой скорости), восстановления | `STUCK` |
+| прочее | | `NAV_FAILED` |
 
-`follow_waypoints` может закончиться `DONE`, но пропустить точки (`missed_waypoints` в
-`result_json` не пуст) — тогда `state = succeeded` и событие `NAV_WAYPOINTS_MISSED` (warning)
-с номерами пропущенных точек.
+Текст Nav2 — в `error_message`; в Jazzy он обычно пуст — тогда `Nav2 error <код>`.
 
-**Чужие задачи.** `/compass/nav_status` — только сервисные цели Compass. Функции, запущенные
-агентом (`source = fms`), UI видит в `/task_orchestrator/active_tasks`: «выполняется: докинг (fms)».
+`follow_waypoints` с `stop_on_failure: false` заканчивается `SUCCEEDED`, даже если пропустил точки
+(`missed_waypoints`) — тогда событие `NAV_WAYPOINTS_MISSED` (warning) с номерами точек (с 1).
+
+Навигация остановилась во время цели (смена карты, падение стека) — результата Nav2 уже не будет:
+compass_core сам ставит `canceled`.
 
 ### 4.5 СТОП и отмена
 
 - `/compass/stop` → блокировка twist_mux (`locks.stop`: `compass_stop_lock`, `std_msgs/Bool`,
-  приоритет 255 — ни джойстик, ни Nav2) + обнулить teleop + `/task_orchestrator/stop` (`StopTasksV1`, `source: compass`) —
-  отменяет все задачи с `cancel_on_stop: true`, в том числе запущенные агентом; агент сообщает fms
-  `safetyState.eStop = REMOTE`. Пока СТОП нажат: `status.estop = true`, цели отклоняются
-  (`MODE_NOT_ALLOWED`), допуск оркестратора `emergency_stop_active`. Снимается `/compass/stop/release`
+  приоритет 255 — ни джойстик, ни Nav2) + обнулить teleop + отмена цели Compass. Задание fms агент
+  останавливает сам по `status.estop` и сообщает fms `safetyState.eStop = REMOTE`. Пока СТОП нажат:
+  `status.estop = true`, цели отклоняются (`MODE_NOT_ALLOWED`). Снимается `/compass/stop/release`
   (в UI кнопка становится «Снять СТОП», с подтверждением). События `STOP_PRESSED`, `STOP_RELEASED`.
-- `/compass/nav/cancel` → `/task_orchestrator/cancel_tasks` (`CancelTasksV1`) с `task_id` сервисной цели.
+- `/compass/nav/cancel` → отмена goal Nav2 (`async_cancel_goal`).
+- Цель отменяется также: ненулевым teleop, сменой режима из `SERVICE`, активацией другой карты,
+  стартом картографирования, `BATTERY_CRITICAL`.
 
-### 4.6 Что UI читает напрямую
-
-Только чтение, через rosbridge (§6):
-
-| Интерфейс | Для чего в UI |
-|---|---|
-| `/task_orchestrator/active_tasks` (`ActiveTaskArrayV1`) | список активных задач и их источников |
-| `/task_orchestrator/list_task_records` (`ListTaskRecordsV1`) | экран истории задач (фильтры: статус, источник, лимит) |
-| `/task_orchestrator/list_events` (`ListEventsV1`) | подробности задачи |
-| `/task_orchestrator/get_task` (`GetTaskV1`) | одна задача |
-
-Ставить, отменять и останавливать задачи UI сам **не может** — `execute_task`, `cancel_tasks`,
-`stop` закрыты белыми списками; только через compass_core (аренда).
+Action'ы Nav2 UI сам не вызывает — они закрыты белыми списками rosbridge; только через
+compass_core (аренда).
 
 ---
 
@@ -644,7 +519,7 @@ rosbridge, отдельного веб-сервера ставить не нуж
   uploads/{upload_id}/...        # compass_core чистит после импорта и по возрасту (> 1 ч)
   logs/compass-YYYY-MM-DD.log    # журнал WARN+, compass_core чистит старше 7 дней
   ros_log/                       # ROS_LOG_DIR сервиса; чистит systemd-tmpfiles (14 дней)
-  active_map, tasks.db
+  active_map, events.jsonl
 ```
 
 - `map.pgm` + `map.yaml` — как у map_saver (trinary), но `free_thresh: 0.196`: при 0.25
@@ -671,9 +546,9 @@ rosbridge, отдельного веб-сервера ставить не нуж
 # параметры ноды rosbridge_server/rosbridge_websocket (в launch compass_bringup)
 address: "127.0.0.1"
 port: 9090
-topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout, /task_orchestrator/active_tasks]"
+topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout]"
 topics_pub_glob: "[/compass/teleop, /compass/control/heartbeat, /initialpose]"
-services_glob: "[/compass/*, /robot/set_operating_mode, /robot/maps/activate, /task_orchestrator/list_task_records, /task_orchestrator/list_events, /task_orchestrator/get_task]"
+services_glob: "[/compass/*, /robot/set_operating_mode, /robot/maps/activate]"
 actions_glob: "[]"
 params_glob: "[]"
 ```
@@ -793,7 +668,7 @@ float32[] points                 # x0, y0, x1, y1, … в мировых коо�
 
 ```
 # NavStatus.msg — /compass/nav_status
-string goal_id                   # task_id в task_orchestrator; пусто — задачи не было
+string goal_id                   # id цели, выдаёт compass_core; пусто — цели не было
 string source                    # compass
 string operator_name             # для source = compass — client_name владельца аренды
 string kind                      # goal | route
@@ -804,7 +679,7 @@ string state                     # active | succeeded | failed | canceled
 float32 distance_remaining       # м до конца; -1 — неизвестно (UI не показывает)
 float32 eta                      # с
 uint16 recoveries
-string error_code                # NAV_FAILED | TIMEOUT; пусто без ошибки
+string error_code                # NO_PATH | STUCK | NAV_FAILED (по коду ошибки Nav2); пусто без ошибки
 string error_message
 ```
 
@@ -1055,6 +930,11 @@ v1.3 (2026-10-24):
 - Пакет `compass_interfaces` → **`robot_interfaces`**; хранилище `/var/lib/compass` → `/var/lib/robot`;
   раздел конфига `fleet` → `fms`. Новые: `VdaStatus`, `/vda5050/path`.
 
+v1.4 (2026-10-27):
+- `ros2_task_orchestrator` убран: compass_core ставит сервисные цели прямо в Nav2 (§4). Настоящие
+  коды ошибок (`NO_PATH`, `STUCK`), замена цели без очереди; нет `tasks.yaml`, `tasks.db`,
+  `/task_orchestrator/*` в белых списках.
+
 ## 9. Открытые вопросы к Семёну
 
 1. Аппаратный E-stop: есть ли сигнал, чтобы заполнять `status.estop`?
@@ -1070,6 +950,7 @@ v1.3 (2026-10-24):
 |---|---|---|
 | 2026-10-02 | Задачи от флота | да, агент VDA 5050 в разработке |
 | 2026-10-24 | Агент и compass_core | соседи; кто командует — режим работы VDA (§3.1, §3.6) |
+| 2026-10-27 | task_orchestrator | убран: цели прямо в Nav2 из compass_core (§4) |
 | 2026-10-24 | HTTP на роботе | ~~nginx~~ → нода `compass_web` (Tornado): статика, файлы, прокси WebSocket rosbridge; без лишнего пакета при развёртывании |
 | 2026-10-24 | SLAM в TEACH_IN | дочерний процесс compass_core (`slam.launch.py`), свой на каждый вход |
 | 2026-10-24 | Сохранение карты | compass_core сам пишет PGM+YAML из `/map`, posegraph — `serialize_map`; без `map.png`: превью UI рисует из `map.pgm` |
