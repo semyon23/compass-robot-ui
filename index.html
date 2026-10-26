@@ -25,10 +25,9 @@
         --cs-grid: rgba(30, 64, 175, 0.07);
         --cs-dial: #cbd5e1;
         --cs-dial-major: #64748b;
-        --cs-free: #ffffff;
-        --cs-wall: #1e293b;
-        --cs-scan: #ea580c;
-        --cs-scan-soft: rgba(234, 88, 12, 0.32);
+        --cs-edge: #94a3b8;
+        --cs-station: #ffffff;
+        --cs-order: #0891b2;
         --cs-nav: #059669;
         --cs-text: #64748b;
         --cs-word-a: #1e3a8a;
@@ -55,10 +54,9 @@
         --cs-grid: rgba(96, 165, 250, 0.06);
         --cs-dial: #1e293b;
         --cs-dial-major: #475569;
-        --cs-free: #1e293b;
-        --cs-wall: #e2e8f0;
-        --cs-scan: #fb923c;
-        --cs-scan-soft: rgba(251, 146, 60, 0.3);
+        --cs-edge: #475569;
+        --cs-station: #0f172a;
+        --cs-order: #22d3ee;
         --cs-nav: #34d399;
         --cs-text: #94a3b8;
         --cs-word-a: #bfdbfe;
@@ -95,77 +93,65 @@
         transform-origin: 160px 160px;
         animation: cs-settle 2.4s cubic-bezier(0.3, 0.7, 0.3, 1) both;
       }
-      /* Один 7-секундный цикл: 0–36 % картографирование, 36–44 % построение пути,
-         44–80 % езда к цели, 80–92 % цель достигнута, дальше всё гаснет и по кругу. */
-      .cs-reveal,
-      .cs-map,
+      /* Один 7-секундный цикл — граф маршрутов склада, как его видит fms:
+         0–12 % граф прорисовывается, 12–22 % загорается маршрут задания,
+         24–80 % робот едет по рёбрам, 80–92 % доехал, дальше всё гаснет и по кругу. */
+      .cs-graph,
+      .cs-graph path,
+      .cs-stations circle,
+      .cs-order,
+      .cs-done,
       .cs-robot,
-      .cs-route,
-      .cs-route path,
-      .cs-goal,
       .cs-goal-ping {
         animation-duration: 7s;
         animation-iteration-count: infinite;
         animation-timing-function: linear;
       }
-      .cs-reveal {
+      .cs-graph {
+        animation-name: cs-fade;
+      }
+      .cs-graph path {
         stroke-dasharray: 100;
         stroke-dashoffset: 100;
-        animation-name: cs-reveal;
+        animation-name: cs-edges;
       }
-      .cs-map {
-        animation-name: cs-fade;
+      .cs-stations circle {
+        opacity: 0;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation-name: cs-station;
+      }
+      .cs-order {
+        opacity: 0;
+        animation-name: cs-order;
+      }
+      .cs-done {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation-name: cs-done;
       }
       .cs-robot {
         position: absolute;
         top: 0;
         left: 0;
-        width: 120px;
-        height: 120px;
-        offset-path: path('M 95 92 V 138 A 12 12 0 0 0 107 150 H 173 A 12 12 0 0 0 185 138 V 104 A 12 12 0 0 1 197 92 H 222 A 14 14 0 0 1 222 120 H 197 A 12 12 0 0 0 185 132 V 198 A 12 12 0 0 1 173 210 H 100');
+        width: 40px;
+        height: 40px;
+        offset-path: path('M 90 110 L 110 175 L 180 165 L 160 90 L 230 110 L 240 190 L 215 240');
         offset-anchor: 50% 50%;
         /* Спрайт робота смотрит вверх, поэтому к направлению пути +90°. */
         offset-rotate: auto 90deg;
-        animation-name: cs-drive, cs-fade;
-      }
-      /* Лидар: оранжевый луч крутится вокруг робота, радиус = зона, которую «видит» карта. */
-      .cs-lidar {
-        position: absolute;
-        inset: 0;
-        border-radius: 50%;
-        border: 1px dashed var(--cs-scan-soft);
-        background: conic-gradient(from 0deg, transparent 0deg, transparent 280deg, var(--cs-scan-soft) 358deg, var(--cs-scan) 360deg);
-        -webkit-mask: radial-gradient(circle, #000 0, #000 58%, transparent 71%);
-        mask: radial-gradient(circle, #000 0, #000 58%, transparent 71%);
-        animation: cs-spin 0.9s linear infinite;
+        opacity: 0;
+        animation-name: cs-drive, cs-robot;
       }
       .cs-robot img {
-        position: absolute;
-        left: 41px;
-        top: 41px;
-        width: 38px;
-        height: 38px;
+        width: 100%;
+        height: 100%;
         filter: drop-shadow(0 3px 4px rgba(15, 23, 42, 0.35));
         opacity: 0;
         transition: opacity 300ms ease;
       }
       .cs-robot img.is-ready {
         opacity: 1;
-      }
-      .cs-route {
-        opacity: 0;
-        animation-name: cs-route;
-      }
-      .cs-route path {
-        stroke-dasharray: 100;
-        stroke-dashoffset: 100;
-        animation-name: cs-draw;
-      }
-      .cs-goal {
-        opacity: 0;
-        transform-box: fill-box;
-        transform-origin: center;
-        animation-name: cs-goal;
       }
       .cs-goal-ping {
         opacity: 0;
@@ -251,41 +237,44 @@
         86% { transform: rotate(-2deg); }
         100% { transform: rotate(0deg); }
       }
-      /* 48.1 % — длина участка картографирования от всего пути робота.
-         cs-drive и cs-reveal идут синхронно: карта открывается там, где проехал робот. */
-      @keyframes cs-drive {
-        0% { offset-distance: 0%; }
-        36%, 44% { offset-distance: 48.1%; }
-        80%, 100% { offset-distance: 100%; }
-      }
-      @keyframes cs-reveal {
-        0% { stroke-dashoffset: 100; }
-        36%, 44% { stroke-dashoffset: 51.9; }
-        80%, 100% { stroke-dashoffset: 0; }
-      }
       @keyframes cs-fade {
         0%, 92% { opacity: 1; }
         98%, 100% { opacity: 0; }
       }
-      @keyframes cs-route {
-        0%, 36% { opacity: 0; }
-        37%, 92% { opacity: 1; }
+      @keyframes cs-edges {
+        0% { stroke-dashoffset: 100; }
+        12%, 100% { stroke-dashoffset: 0; }
+      }
+      @keyframes cs-station {
+        0% { opacity: 0; transform: scale(0.3); }
+        9% { opacity: 1; transform: scale(1.25); }
+        12%, 92% { opacity: 1; transform: none; }
+        98%, 100% { opacity: 0; transform: none; }
+      }
+      @keyframes cs-order {
+        0%, 12% { opacity: 0; }
+        16%, 92% { opacity: 1; }
         98%, 100% { opacity: 0; }
       }
-      @keyframes cs-draw {
-        0%, 37% { stroke-dashoffset: 100; }
-        44%, 100% { stroke-dashoffset: 0; }
+      /* Робот и закрашенный путь идут синхронно: зелёным — то, что уже проехали. */
+      @keyframes cs-drive {
+        0%, 24% { offset-distance: 0%; }
+        80%, 100% { offset-distance: 100%; }
       }
-      @keyframes cs-goal {
-        0%, 35% { opacity: 0; transform: translateY(-10px) scale(0.6); }
-        38% { opacity: 1; transform: translateY(0) scale(1.15); }
-        40%, 92% { opacity: 1; transform: none; }
-        98%, 100% { opacity: 0; transform: none; }
+      @keyframes cs-robot {
+        0%, 18% { opacity: 0; }
+        22%, 92% { opacity: 1; }
+        98%, 100% { opacity: 0; }
+      }
+      @keyframes cs-done {
+        0%, 24% { stroke-dashoffset: 100; opacity: 1; }
+        80%, 92% { stroke-dashoffset: 0; opacity: 1; }
+        98%, 100% { stroke-dashoffset: 0; opacity: 0; }
       }
       @keyframes cs-ping {
         0%, 80% { opacity: 0; transform: scale(0.6); }
         81% { opacity: 0.9; transform: scale(0.6); }
-        90%, 100% { opacity: 0; transform: scale(2.4); }
+        90%, 100% { opacity: 0; transform: scale(2.6); }
       }
       @keyframes cs-rise {
         from { opacity: 0; transform: translateY(8px); }
@@ -295,16 +284,15 @@
         from { transform: translateX(-100%); }
         to { transform: translateX(250%); }
       }
-      /* Без анимации — сразу итог: карта построена, робот у цели. */
+      /* Без анимации — сразу итог: граф, маршрут пройден, робот на конечной станции. */
       @media (prefers-reduced-motion: reduce) {
         #cs-splash *,
         #cs-splash *::after {
           animation: none !important;
         }
-        .cs-reveal { stroke-dashoffset: 0; }
+        .cs-graph path, .cs-done { stroke-dashoffset: 0; }
+        .cs-stations circle, .cs-order, .cs-robot { opacity: 1; }
         .cs-robot { offset-distance: 100%; }
-        .cs-route, .cs-goal { opacity: 1; }
-        .cs-route path { stroke-dashoffset: 0; }
       }
     </style>
   </head>
@@ -314,17 +302,6 @@
     <div id="cs-splash" role="status" aria-live="polite">
       <div class="cs-scene" aria-hidden="true">
         <svg width="320" height="320" viewBox="0 0 320 320">
-          <defs>
-            <!-- Что робот уже «увидел»: полоса шириной в дальность лидара вдоль пройденного пути -->
-            <mask id="cs-seen" maskUnits="userSpaceOnUse" x="0" y="0" width="320" height="320">
-              <circle cx="95" cy="92" r="60" fill="#fff" />
-              <path
-                class="cs-reveal"
-                d="M 95 92 V 138 A 12 12 0 0 0 107 150 H 173 A 12 12 0 0 0 185 138 V 104 A 12 12 0 0 1 197 92 H 222 A 14 14 0 0 1 222 120 H 197 A 12 12 0 0 0 185 132 V 198 A 12 12 0 0 1 173 210 H 100"
-                pathLength="100" fill="none" stroke="#fff" stroke-width="120" stroke-linecap="round" stroke-linejoin="round" />
-            </mask>
-          </defs>
-
           <!-- Циферблат компаса -->
           <g class="cs-dial">
             <circle cx="160" cy="160" r="154" fill="none" stroke="var(--cs-dial)" stroke-width="1.5" />
@@ -339,33 +316,35 @@
             <text x="160" y="34" text-anchor="middle" font-size="10" font-weight="700" fill="var(--cs-accent)" font-family="Inter, system-ui, sans-serif">N</text>
           </g>
 
-          <!-- Карта комнаты: видна только там, куда дотянулся лидар -->
-          <g class="cs-map" mask="url(#cs-seen)">
-            <rect x="72" y="72" width="176" height="176" fill="var(--cs-free)" />
-            <g fill="none" stroke="var(--cs-wall)" stroke-width="4" stroke-linecap="square">
-              <rect x="70" y="70" width="180" height="180" />
-              <line x1="160" y1="70" x2="160" y2="120" />
-              <line x1="70" y1="175" x2="130" y2="175" />
-            </g>
-            <g fill="var(--cs-wall)">
-              <rect x="207" y="160" width="27" height="30" rx="2" />
-              <rect x="115" y="230" width="34" height="12" rx="2" />
-            </g>
+          <!-- Граф склада: рёбра и станции -->
+          <g class="cs-graph" fill="none" stroke="var(--cs-edge)" stroke-width="2" stroke-linecap="round">
+            <path pathLength="100" d="M 90 110 L 160 90 L 230 110 M 110 175 L 180 165 L 240 190 M 95 235 L 165 235 L 215 240
+                                      M 90 110 L 110 175 L 95 235 M 160 90 L 180 165 L 165 235 M 230 110 L 240 190 L 215 240" />
           </g>
 
-          <!-- Путь Nav2 и цель -->
-          <g class="cs-route" fill="none" stroke="var(--cs-nav)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M 222 92 A 14 14 0 0 1 222 120 H 197 A 12 12 0 0 0 185 132 V 198 A 12 12 0 0 1 173 210 H 100" pathLength="100" />
+          <!-- Маршрут задания fms (пунктир) и пройденная часть (зелёным) -->
+          <g fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+            <path class="cs-order" d="M 90 110 L 110 175 L 180 165 L 160 90 L 230 110 L 240 190 L 215 240"
+                  stroke="var(--cs-order)" stroke-dasharray="6 6" />
+            <path class="cs-done" pathLength="100" d="M 90 110 L 110 175 L 180 165 L 160 90 L 230 110 L 240 190 L 215 240"
+                  stroke="var(--cs-nav)" />
           </g>
-          <circle class="cs-goal-ping" cx="100" cy="210" r="9" fill="none" stroke="var(--cs-nav)" stroke-width="2" />
-          <g class="cs-goal">
-            <circle cx="100" cy="210" r="9" fill="none" stroke="var(--cs-nav)" stroke-width="2.5" />
-            <circle cx="100" cy="210" r="3.5" fill="var(--cs-nav)" />
+
+          <g class="cs-stations" fill="var(--cs-station)" stroke="var(--cs-edge)" stroke-width="2">
+            <circle cx="90" cy="110" r="6" style="animation-delay: 0ms" />
+            <circle cx="160" cy="90" r="6" style="animation-delay: 60ms" />
+            <circle cx="230" cy="110" r="6" style="animation-delay: 120ms" />
+            <circle cx="110" cy="175" r="6" style="animation-delay: 180ms" />
+            <circle cx="180" cy="165" r="6" style="animation-delay: 240ms" />
+            <circle cx="240" cy="190" r="6" style="animation-delay: 300ms" />
+            <circle cx="95" cy="235" r="6" style="animation-delay: 360ms" />
+            <circle cx="165" cy="235" r="6" style="animation-delay: 420ms" />
+            <circle cx="215" cy="240" r="7" stroke="var(--cs-nav)" stroke-width="2.5" style="animation-delay: 480ms" />
           </g>
+          <circle class="cs-goal-ping" cx="215" cy="240" r="9" fill="none" stroke="var(--cs-nav)" stroke-width="2" />
         </svg>
 
         <div class="cs-robot">
-          <div class="cs-lidar"></div>
           <img alt="" />
         </div>
       </div>
@@ -386,7 +365,7 @@
         var status = document.getElementById('cs-splash-status')
         var started = Date.now()
         var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches
-        // Минимальное время показа, мс: успевает построить карту и доехать до цели.
+        // Минимальное время показа, мс: робот успевает проехать маршрут до конечной станции.
         var MIN_MS = reduced ? 0 : 6000
 
         // Картинку робота ставим из скрипта: путь в атрибуте src Vite в dev-режиме
@@ -407,8 +386,8 @@
         }
         var ru = (get('compass.locale') || ((navigator.language || '').toLowerCase().indexOf('ru') === 0 ? 'ru' : 'en')) === 'ru'
         var T = ru
-          ? { label: 'Загрузка Compass', tagline: 'Управляй своим роботом', texts: ['Подключаемся к роботу', 'Строим карту', 'Прокладываем маршрут', 'Робот готов'] }
-          : { label: 'Loading Compass', tagline: 'Control your robot', texts: ['Connecting to robot', 'Building map', 'Planning route', 'Robot ready'] }
+          ? { label: 'Загрузка Compass', tagline: 'Управляй своим роботом', texts: ['Подключаемся к роботу', 'Получаем задание', 'Едем по маршруту', 'Робот готов'] }
+          : { label: 'Loading Compass', tagline: 'Control your robot', texts: ['Connecting to robot', 'Receiving the order', 'Driving the route', 'Robot ready'] }
         var texts = T.texts
         document.documentElement.lang = ru ? 'ru' : 'en'
         el.setAttribute('aria-label', T.label)
@@ -420,9 +399,9 @@
           el.style.setProperty('--cs-word-b', dark ? '#8e959f' : '#6c737d')
         }
 
-        // Подписи идут в такт анимации (цикл 7 с, см. cs-drive).
+        // Подписи идут в такт анимации (цикл 7 с, см. cs-drive): граф, задание, езда, доехал.
         status.textContent = texts[0]
-        var at = [0, 1200, 2550, 5600]
+        var at = [0, 850, 1700, 5600]
         var timers = at.map(function (ms, i) {
           return setTimeout(function () {
             status.textContent = texts[i]
