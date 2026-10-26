@@ -7,6 +7,7 @@ import MapCanvas from '../components/MapCanvas.vue'
 import ControlCard from '../components/ControlCard.vue'
 import JoystickCard from '../components/JoystickCard.vue'
 import NavPanel from '../components/NavPanel.vue'
+import FmsCard from '../components/FmsCard.vue'
 import { useRobotStore } from '../stores/robot'
 import { useSubscription } from '../composables/useSubscription'
 import { activateMap } from '../api/navigation'
@@ -16,7 +17,7 @@ const { t } = useI18n()
 const message = useMessage()
 const robot = useRobotStore()
 
-useSubscription(['pose', 'scan', 'path', 'nav', 'bt'])
+useSubscription(['pose', 'scan', 'path', 'nav', 'bt', 'fmsPath'])
 
 const follow = ref(true)
 const joystickCard = ref(null)
@@ -36,6 +37,8 @@ const stackRunning = (name) => robot.status?.stacks?.some((s) => s.name === name
 const navRunning = computed(() => stackRunning('localization'))
 const navReady = computed(() => hasNav.value && navRunning.value && robot.status?.state === 'ready')
 const localized = computed(() => robot.status?.localization?.status === 'ok')
+// Работа с fms: маршрут order'а на карте и карточка fms в панели.
+const fmsMode = computed(() => ['AUTOMATIC', 'INTERVENED'].includes(robot.status?.mode))
 const canCommand = computed(
   () =>
     navReady.value && stackRunning('navigation') && robot.status?.mode === 'SERVICE' && localized.value &&
@@ -112,7 +115,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 // ---------- Телеметрия ----------
 
 const pose = computed(() => robot.pose)
-const command = computed(() => joystickCard.value?.command ?? { linear: 0, angular: 0 })
+const command = computed(() => joystickCard.value?.command ?? { linear: 0, angular: 0, lateral: 0 })
 const fmt = (v, digits = 2) => (v == null ? '—' : v.toFixed(digits))
 const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)}°`)
 </script>
@@ -130,6 +133,7 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
         :map="robot.liveMap"
         :tool="tool"
         :path="navReady ? robot.navPath : null"
+        :fms-path="fmsMode ? robot.fmsPath : null"
         :nav="navReady ? robot.navStatus : null"
         :draft="navReady ? draft : null"
         @pick="onPick"
@@ -173,6 +177,7 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
 
     <!-- Панель -->
     <div class="flex w-full shrink-0 flex-col gap-4 overflow-y-auto lg:w-80">
+      <FmsCard v-if="robot.fms" />
       <ControlCard />
 
       <!-- display-directive="show": джойстик и клавиатура работают и на вкладке навигации -->
@@ -202,7 +207,10 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
           <dt class="text-slate-500 dark:text-slate-400">ω</dt>
           <dd class="text-right">{{ fmt(pose?.angular) }} rad/s</dd>
           <dt class="text-slate-500 dark:text-slate-400">cmd</dt>
-          <dd class="text-right">{{ fmt(command.linear) }} / {{ fmt(command.angular) }}</dd>
+          <dd class="text-right">
+            {{ fmt(command.linear) }}<template v-if="robot.capabilities.has('holonomic')"> / {{ fmt(command.lateral) }}</template>
+            / {{ fmt(command.angular) }}
+          </dd>
         </dl>
       </section>
     </div>

@@ -1,16 +1,15 @@
 <script setup>
 import { computed } from 'vue'
-import { NDropdown, useMessage } from 'naive-ui'
+import { NDropdown } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useRobotStore } from '../stores/robot'
-import { MODE_COLORS, SWITCHABLE_MODES } from '../lib/modes'
-import { setOperatingMode } from '../api/robot'
-import { errorText } from '../lib/errorText'
+import { MODE_COLORS } from '../lib/modes'
+import { useFmsHandover } from '../composables/useFmsHandover'
 
 /** Бейдж режима работы; по нажатию — смена режима (робот проверяет, можно ли). */
 const { t, te } = useI18n()
-const message = useMessage()
 const robot = useRobotStore()
+const { change, takeOver } = useFmsHandover()
 
 const mode = computed(() => robot.displayMode)
 const color = computed(() => MODE_COLORS[mode.value] || MODE_COLORS.unknown)
@@ -20,21 +19,24 @@ const canSwitch = computed(
   () => robot.online && robot.status && !['STARTUP', 'switching', 'TEACH_IN'].includes(mode.value),
 )
 
-const options = computed(() =>
-  SWITCHABLE_MODES.filter((m) => m !== robot.status?.mode).map((m) => ({
-    key: m,
-    label: `${t(`mode.${m}`)} — ${t(`modeSwitch.hint_${m}`)}`,
-  })),
-)
-
-async function select(target) {
-  try {
-    await setOperatingMode(target)
-    message.success(t('modeSwitch.changed', { mode: t(`mode.${target}`) }))
-  } catch (e) {
-    message.error(errorText(e))
+// Из AUTOMATIC — только «Перехватить»; INTERVENED выбирает он сам. TEACH_IN — с экрана «Картографирование».
+const options = computed(() => {
+  const current = robot.status?.mode
+  if (current === 'AUTOMATIC') {
+    return [{ key: 'takeOver', label: `${t('modeSwitch.takeOver')} — ${t('modeSwitch.hint_takeOver')}` }]
   }
-}
+  return ['AUTOMATIC', 'MANUAL', 'SERVICE']
+    .filter((m) => m !== current)
+    .map((m) => ({
+      key: m,
+      label:
+        m === 'AUTOMATIC'
+          ? `${t('modeSwitch.handOver')} — ${t('modeSwitch.hint_AUTOMATIC')}`
+          : `${t(`mode.${m}`)} — ${t(`modeSwitch.hint_${m}`)}`,
+    }))
+})
+
+const select = (key) => (key === 'takeOver' ? takeOver() : change(key))
 </script>
 
 <template>

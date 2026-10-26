@@ -10,7 +10,3 @@ export const MODE_COLORS = {
   error: '#dc2626',
   unknown: '#94a3b8',
 }
-
-// Куда можно попросить перейти из бейджа. Проверяет и отказывает с причиной — compass_core.
-// TEACH_IN — только с экрана «Картографирование»: там выбор карты и защита несохранённых изменений.
-export const SWITCHABLE_MODES = ['SERVICE', 'MANUAL', 'AUTOMATIC', 'INTERVENED']

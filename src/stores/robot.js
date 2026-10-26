@@ -4,10 +4,12 @@ import * as ros from '../api/rosbridge'
 import * as robotApi from '../api/robot'
 import * as navApi from '../api/navigation'
 import { clientId, clientName } from '../lib/clientIdentity'
+import { getConfig } from '../api/config'
 
 const MAX_EVENTS = 50
 const HEARTBEAT_MS = 500 // 2 Гц; робот снимает аренду, если тишина дольше 2 с
 const PING_MS = 2000
+const FMS_STALE_MS = 3000 // агент шлёт /vda5050/status раз в секунду; дольше тишина — агента нет
 
 // Потоки по запросу экранов (useSubscription): имя → топик rosbridge.
 const STREAMS = {
@@ -17,6 +19,8 @@ const STREAMS = {
   map: { topic: '/map', type: 'nav_msgs/msg/OccupancyGrid', options: { compression: 'cbor', throttle_rate: 1000 } },
   nav: { topic: '/compass/nav_status', type: 'robot_interfaces/msg/NavStatus' },
   path: { topic: '/plan', type: 'nav_msgs/msg/Path', options: { throttle_rate: 500 } },
+  // Маршрут order'а fms (base) от агента VDA 5050.
+  fmsPath: { topic: '/vda5050/path', type: 'nav_msgs/msg/Path' },
   // Переходы узлов дерева поведения Nav2 — без троттлинга, иначе потеряем смену состояния.
   bt: { topic: '/behavior_tree_log', type: 'nav2_msgs/msg/BehaviorTreeLog' },
 }
@@ -66,10 +70,15 @@ export const useRobotStore = defineStore('robot', () => {
   const liveMap = ref(null) // /map: { width, height, resolution, origin, data }
   const navStatus = ref(null) // /compass/nav_status: текущая или последняя цель Compass
   const navPath = ref([]) // /plan: путь планировщика Nav2
+  const fms = ref(null) // /vda5050/status: работа с fms; null — агента нет
+  const fmsPath = ref([]) // /vda5050/path: маршрут order'а fms
+  let fmsAt = 0
   const btRunning = ref([]) // узлы дерева поведения Nav2 в состоянии RUNNING
   const events = ref([])
   const latencyMs = ref(null)
   const leaseId = ref(null)
+  // Лимиты ручного управления из настроек робота (motion.*): ползунок скорости показывает реальные м/с.
+  const motionLimits = ref(null) // { linear, angular }
 
   const online = computed(() => connection.value === 'online')
   const robotName = computed(() => info.value?.robotName || 'Compass')
@@ -157,15 +166,19 @@ export const useRobotStore = defineStore('robot', () => {
   }
 
   /** Джойстик: без аренды робот команду всё равно проигнорирует — не шлём. */
-  function sendTeleop(linear, angular) {
-    if (leaseId.value) robotApi.sendTeleop(leaseId.value, linear, angular)
+  function sendTeleop(linear, angular, lateral = 0) {
+    if (leaseId.value) robotApi.sendTeleop(leaseId.value, linear, angular, lateral)
   }
 
   // ---------- Подписки ----------
 
   function onStatus(msg) {
-    // Сменился режим — прежняя карта (SLAM остановлен) больше не текущая.
-    if (rawStatus.value && rawStatus.value.operating_mode !== msg.operating_mode) liveMap.value = null
+    // Вход в TEACH_IN или выход из него меняет стек (SLAM ⇄ навигация) — прежняя карта больше не текущая.
+    // Остальные смены режима (передать fms, перехватить) карту не меняют: /map второй раз не придёт.
+    const prev = rawStatus.value?.operating_mode
+    if (prev && prev !== msg.operating_mode && (prev === 'TEACH_IN' || msg.operating_mode === 'TEACH_IN')) {
+      liveMap.value = null
+    }
     rawStatus.value = msg
     // Аренду у нас забрали (перехват, снятие по таймауту, смена режима) — забываем свой ключ.
     // «Свободно» сразу после захвата — это статус, отправленный до него: пропускаем секунду.
@@ -177,16 +190,54 @@ export const useRobotStore = defineStore('robot', () => {
     }
   }
 
-  function onEvent(msg) {
-    const ev = {
-      id: msg.id,
-      time: isoOf(msg.stamp),
-      level: msg.level,
-      code: msg.code,
-      message: msg.message,
-      details: objectOf(msg.details),
+  function onFmsStatus(msg) {
+    fmsAt = Date.now()
+    fms.value = {
+      connection: msg.connection, // ONLINE | OFFLINE — связь агента с брокером fms
+      orderId: msg.order_id,
+      orderUpdateId: msg.order_update_id,
+      orderActive: msg.order_active,
+      lastNodeId: msg.last_node_id,
+      driving: msg.driving,
+      paused: msg.paused,
+      waitingForUpdate: msg.new_base_request,
+      errors: (msg.errors || []).map((e) => ({ code: e.code, message: e.message })),
     }
+  }
+
+  const eventOf = (msg) => ({
+    id: msg.id,
+    time: isoOf(msg.stamp),
+    level: msg.level,
+    code: msg.code,
+    message: msg.message,
+    details: objectOf(msg.details),
+  })
+
+  function onEvent(msg) {
+    const ev = eventOf(msg)
     events.value = [ev, ...events.value.filter((e) => e.id !== ev.id)].slice(0, MAX_EVENTS)
+  }
+
+  // Лента после перезагрузки страницы: что было — из истории робота, новое придёт топиком.
+  async function loadEvents() {
+    try {
+      const res = await robotApi.getEvents(MAX_EVENTS)
+      const known = new Set(events.value.map((e) => e.id))
+      const merged = [...events.value, ...res.events.map(eventOf).filter((e) => !known.has(e.id))]
+      events.value = merged.sort((a, b) => (a.time < b.time ? 1 : -1)).slice(0, MAX_EVENTS)
+    } catch (_) {
+      // старый compass_core без истории — просто живая лента
+    }
+  }
+
+  async function loadMotionLimits() {
+    try {
+      const { values } = await getConfig()
+      motionLimits.value = { linear: values['motion.max_linear'], angular: values['motion.max_angular'] }
+    } catch (_) {
+      motionLimits.value = null
+    }
   }
 
   const streamHandlers = {
@@ -228,6 +279,9 @@ export const useRobotStore = defineStore('robot', () => {
     path: (msg) => {
       navPath.value = (msg.poses || []).map((p) => [p.pose.position.x, p.pose.position.y])
     },
+    fmsPath: (msg) => {
+      fmsPath.value = (msg.poses || []).map((p) => [p.pose.position.x, p.pose.position.y])
+    },
     map: (msg) => {
       const o = msg.info.origin
       liveMap.value = {
@@ -266,6 +320,7 @@ export const useRobotStore = defineStore('robot', () => {
 
   // Задержка: время ответа /compass/ping (кружок + мс в шапке).
   async function measureLatency() {
+    if (fms.value && Date.now() - fmsAt > FMS_STALE_MS) fms.value = null
     if (!online.value) return
     const t0 = performance.now()
     try {
@@ -280,8 +335,12 @@ export const useRobotStore = defineStore('robot', () => {
   function init() {
     ros.subscribe('/compass/status', 'robot_interfaces/msg/RobotStatus', onStatus)
     ros.subscribe('/compass/events', 'robot_interfaces/msg/Event', onEvent)
+    ros.subscribe('/compass/config/changed', 'robot_interfaces/msg/ConfigChanged', loadMotionLimits)
+    ros.subscribe('/vda5050/status', 'robot_interfaces/msg/VdaStatus', onFmsStatus)
     ros.onOpen(() => {
       loadInfo()
+      loadEvents()
+      loadMotionLimits()
       measureLatency()
     })
     // Без связи не показываем устаревшее состояние как текущее.
@@ -291,6 +350,8 @@ export const useRobotStore = defineStore('robot', () => {
       scan.value = null
       liveMap.value = null
       navPath.value = []
+      fms.value = null
+      fmsPath.value = []
       latencyMs.value = null
       leaseId.value = null
       stopHeartbeat()
@@ -308,6 +369,8 @@ export const useRobotStore = defineStore('robot', () => {
     navStatus,
     navPath,
     navActivity,
+    fms,
+    fmsPath,
     events,
     latencyMs,
     clientId,
@@ -319,6 +382,7 @@ export const useRobotStore = defineStore('robot', () => {
     acquireControl,
     releaseControl,
     sendTeleop,
+    motionLimits,
     navStart,
     subscribeStreams,
     loadInfo,

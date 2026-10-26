@@ -24,6 +24,7 @@ const props = defineProps({
   robotRadius: { type: Number, default: 0.3 },
   tool: { type: String, default: null },
   path: { type: Array, default: null }, // путь Nav2 [[x, y], ...]
+  fmsPath: { type: Array, default: null }, // маршрут order'а fms [[x, y], ...] — узлы графа
   // Текущая цель/маршрут из nav_status: { kind, poses, index, state }
   nav: { type: Object, default: null },
   draft: { type: Array, default: null }, // маршрут в редактировании [{ x, y, theta }]
@@ -53,12 +54,12 @@ const COLORS = {
   light: {
     bg: '#e9eef4', minor: '#dbe2ea', major: '#c3ccd8', axisX: '#ef4444', axisY: '#22c55e',
     scan: '#ea580c', text: '#64748b',
-    nav: '#059669', draft: '#f97316', pose: '#d97706', done: '#94a3b8', label: '#ffffff',
+    nav: '#059669', draft: '#f97316', pose: '#d97706', done: '#94a3b8', label: '#ffffff', fms: '#0891b2',
   },
   dark: {
     bg: '#020617', minor: '#0f172a', major: '#1e293b', axisX: '#f87171', axisY: '#4ade80',
     scan: '#fb923c', text: '#94a3b8',
-    nav: '#34d399', draft: '#fb923c', pose: '#fbbf24', done: '#64748b', label: '#020617',
+    nav: '#34d399', draft: '#fb923c', pose: '#fbbf24', done: '#64748b', label: '#020617', fms: '#22d3ee',
   },
 }
 
@@ -82,6 +83,7 @@ function draw() {
   drawGrid(c)
   drawMap()
   drawAxes(c)
+  drawFmsPath(c)
   drawPath(c)
   drawNav(c)
   drawDraft(c)
@@ -168,6 +170,32 @@ function drawPath(c) {
     else ctx.moveTo(px, py)
   })
   ctx.stroke()
+  ctx.restore()
+}
+
+/** Маршрут fms: рёбра графа от узла, где робот, до конца base; узлы — точками. */
+function drawFmsPath(c) {
+  const pts = props.fmsPath
+  if (!pts?.length) return
+  ctx.save()
+  ctx.strokeStyle = c.fms
+  ctx.fillStyle = c.fms
+  ctx.lineWidth = 3
+  ctx.lineJoin = 'round'
+  ctx.globalAlpha = 0.85
+  ctx.beginPath()
+  pts.forEach(([x, y], i) => {
+    const [px, py] = toScreen(x, y)
+    if (i) ctx.lineTo(px, py)
+    else ctx.moveTo(px, py)
+  })
+  ctx.stroke()
+  for (const [x, y] of pts) {
+    const [px, py] = toScreen(x, y)
+    ctx.beginPath()
+    ctx.arc(px, py, 4, 0, 2 * Math.PI)
+    ctx.fill()
+  }
   ctx.restore()
 }
 
@@ -470,7 +498,7 @@ watch(() => props.map, (m) => {
 }, { immediate: true })
 
 watch(
-  () => [props.pose, props.scan, props.map, props.path, props.nav, props.draft, props.tool, follow.value, isDark.value, brand.value, robotLook.kind.value],
+  () => [props.pose, props.scan, props.map, props.path, props.fmsPath, props.nav, props.draft, props.tool, follow.value, isDark.value, brand.value, robotLook.kind.value],
   requestDraw,
   { deep: false },
 )

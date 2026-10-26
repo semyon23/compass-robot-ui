@@ -4,6 +4,7 @@ import { NCard } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useRobotStore } from '../stores/robot'
 import { MODE_COLORS } from '../lib/modes'
+import FmsCard from '../components/FmsCard.vue'
 
 const { t, te, locale } = useI18n()
 const robot = useRobotStore()
@@ -84,6 +85,7 @@ function timeOf(iso) {
       <div class="text-xl leading-tight font-semibold">{{ status ? controlText : '—' }}</div>
     </NCard>
 
+    <FmsCard class="md:col-span-2" />
     <NCard size="small" :title="t('overview.stacks')" class="!bg-white md:col-span-1 xl:col-span-2 dark:!bg-slate-900">
       <ul v-if="status?.stacks?.length" class="divide-y divide-slate-100 dark:divide-slate-800">
         <li v-for="s in status.stacks" :key="s.name" class="flex items-center justify-between py-2">

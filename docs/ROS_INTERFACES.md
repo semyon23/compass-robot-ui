@@ -15,15 +15,15 @@
 Целиком бортовое ПО описано в `~/fms_robot/ARCHITECTURE.md`. Для UI важно:
 
 ```
-Браузер (Vue + roslibjs)
-  │  http://robot/            статика UI, файлы карт, загрузка
+Браузер (Vue, свой клиент rosbridge)
+  │  http://robot/            статика UI, файлы карт и логов, загрузка
   │  ws://robot/rosbridge     протокол rosbridge v2.1 (JSON / CBOR)
   ▼
-nginx ─────────────┬──────────────────────────────┐
+compass_web ───────┬──────────────────────────────┐
   │ /              │ /files/                      │ /rosbridge → 127.0.0.1:9090
   ▼                ▼                              ▼
 dist/ UI     /var/lib/robot/                rosbridge_server (apt, 2.7.x)  
-             maps, uploads                          │ ROS 2
+             maps, uploads, logs                    │ ROS 2
                                                     ▼
              compass_core ◄──── /robot/operating_mode, /robot/maps/activate ────► vda5050_adapter ── MQTT ──► fms
              режим, стеки, карты,                                                 (протокол VDA, движение
@@ -34,7 +34,8 @@ dist/ UI     /var/lib/robot/                rosbridge_server (apt, 2.7.x)
 ```
 
 - **rosbridge** — всё «живое» для UI: состояние, поза, скан, карта, путь, события, команды.
-- **nginx** — статика UI, файлы карт, загрузка при импорте, прокси WebSocket rosbridge.
+- **compass_web** — веб-сервер робота (вместо nginx): статика UI, файлы карт и логов, загрузка
+  при импорте, прокси WebSocket rosbridge. Снаружи робота открыт только он.
 - **compass_core** — сервисный узел. UI ходит в Nav2, slam_toolbox и оркестратор **через него**,
   кроме стандартных топиков `/map`, `/plan`, `/initialpose`.
 - **vda5050_adapter** — работа с fms. Для compass_core **сосед**, а не клиент: общаются через режим
@@ -181,7 +182,8 @@ compass_core кладёт **код ошибки в `message`** (например
 | `/compass/get_info` | `GetInfo` | — | имя, серийник, версии, возможности |
 | `/robot/set_operating_mode` | `SetOperatingMode` | — | сменить режим работы (асинхронно, ход — в `status.transition`) |
 | `/robot/maps/activate` | `ActivateMap` | — | загрузить карту для локализации (Compass в `SERVICE`; агент по команде fms) |
-| `/compass/stop` | `std_srvs/srv/Trigger` | — | СТОП: обнулить teleop + `/task_orchestrator/stop` (§4.5) |
+| `/compass/stop` | `std_srvs/srv/Trigger` | — | СТОП: блокировка twist_mux, обнулить teleop, `/task_orchestrator/stop` (§4.5) |
+| `/compass/stop/release` | `std_srvs/srv/Trigger` | — | снять СТОП |
 | `/compass/control/acquire` | `AcquireControl` | — | взять / перехватить управление |
 | `/compass/control/release` | `ReleaseControl` | владелец | отдать |
 | `/compass/mapping/set_paused` | `std_srvs/srv/SetBool` | — | пауза приёма сканов в SLAM (`TEACH_IN`); код ошибки — в `message` |
@@ -192,7 +194,7 @@ compass_core кладёт **код ошибки в `message`** (например
 | `/compass/maps/import` | `ImportMap` | — | зарегистрировать загруженные файлы (§5) |
 | `/compass/nav/start` | `NavStart` | **владелец** | сервисная цель или маршрут (только `SERVICE`) |
 | `/compass/nav/cancel` | `std_srvs/srv/Trigger` | — | отменить сервисную цель |
-| `/compass/events/history` | `GetEvents` | — | последние события (лента после перезагрузки) — позже |
+| `/compass/events/history` | `GetEvents` | — | последние события (до 200, в памяти и в `{data_dir}/events.jsonl`) — лента после перезагрузки страницы |
 | `/compass/logs/history` | `GetLogs` | — | WARN+ из `/rosout`, последние 1000 (память + файлы `logs/`, переживают перезапуск); то же сообщение ноды — не чаще раза в минуту |
 | `/compass/config/*` | `JsonCall` | — | конфигурация, §3.5 |
 | `/compass/system/restart_stack` | `RestartStack` | — | перезапустить стек |
@@ -228,8 +230,9 @@ compass_core кладёт **код ошибки в `message`** (например
   (таймаут 60 с). Из других режимов в `TEACH_IN` и из `TEACH_IN` не в `SERVICE` — `MODE_NOT_ALLOWED`,
   во время переключения — `BUSY`. Падение стека — событие `STACK_FAILED` (`stack`), не поднялся
   вовремя — `STACK_TIMEOUT`; SLAM — возврат в `SERVICE`.
-  `continue_from` — достроить сохранённую карту: slam_toolbox грузит её posegraph и считает, что
-  робот стоит **там, где эту карту начинали** (`map_start_at_dock`). Выход с несохранённой картой
+  `continue_from` — достроить сохранённую карту: slam_toolbox грузит её posegraph. Если это
+  активная карта и робот на ней локализован, SLAM стартует с текущей позы робота
+  (`map_start_pose`); иначе считает, что робот стоит **там, где эту карту начинали** (`map_start_at_dock`). Выход с несохранённой картой
   UI подтверждает по `status.mapping.unsaved_changes`. В бейдже режима `TEACH_IN` нет — только
   с экрана «Картографирование».
 - `MANUAL`, `INTERVENED`, `SERVICE` — между собой свободно (кроме `INTERVENED`: только из `AUTOMATIC`).
@@ -285,6 +288,12 @@ UI ─/compass/teleop─► compass_core ─cmd_vel_teleop─► twist_mux ─cm
                            лимиты из конфига)  Nav2 ─cmd_vel_auto (controller → velocity_smoother →
                                                                     collision_monitor, config/nav2.yaml)
 ```
+
+Тип скорости — флаг `cmd_vel_stamped` в `compass_core.yaml` робота: `false` — `Twist`, `true` —
+`TwistStamped` (ros2_control в Jazzy) у `cmd_vel_teleop` и twist_mux (`use_stamped` задаёт
+`core.launch.py` по тому же флагу); Nav2 — `enable_stamped_cmd_vel` в `nav2.yaml` робота.
+`holonomic: true` (меканум, омни) — джойстик шлёт `lateral` (UI: Q/E и режим «Вбок»), лимит
+`velocity_smoother` по y = `motion.max_linear`; иначе y всегда 0.
 
 `cmd_vel_nav` — внутреннее имя Nav2 для сырого выхода контроллера, поэтому вход twist_mux от Nav2
 называется `cmd_vel_auto`. Джойстик идёт мимо collision_monitor (он — часть стека навигации,
@@ -389,12 +398,17 @@ compass_core проверяет режим и аренду, превращает
 | Интерфейс | Кто → кому | Зачем |
 |---|---|---|
 | `/robot/operating_mode` | compass_core → агент | режим для `state.operatingMode`; агент принимает order'а только в `AUTOMATIC` (в `INTERVENED` order сохраняется) |
-| `/robot/maps/activate` | агент → compass_core | `enableMap`, `initializePosition` с другой картой |
+| `/robot/maps/activate` | агент → compass_core | `enableMap`, `initializePosition` с другой картой. Другая карта: в статусе сразу `map` = новая, `localization.status` = `none`, `state` = `switching` до перезапуска навигации; `enableMap` агент завершает, когда снова `ready` |
 | `/task_orchestrator/execute_task` | агент → оркестратор | функции робота в action'ах VDA (`pick`, `drop`, `startCharging`), `source: fms` |
 
 Для UI агент публикует:
 - **`/vda5050/status`** (`VdaStatus`) — связь с брокером, `orderId`, `lastNodeId`, едет / пауза, ошибки;
-- **`/vda5050/path`** — текущий base-маршрут: UI рисует его на карте в `AUTOMATIC` и `INTERVENED`.
+- **`/vda5050/path`** — base-маршрут от узла, где робот, до конца base (узлы графа; меньше двух узлов —
+  пустой): UI рисует его на карте в `AUTOMATIC` и `INTERVENED`.
+
+UI: карточка **fms** («Обзор», панель «Управления») — связь, задание, ошибки, кнопки «Передать fms» /
+«Перехватить»; те же действия — в бейдже режима. «Перехватить» спрашивает подтверждение и выбирает
+`INTERVENED` при `order_active`, иначе `MANUAL`. Агента нет (статус не приходил 3 с) — «Агент не запущен».
 
 СТОП из Compass агент видит как `safetyState.eStop = REMOTE` (через блокировку twist_mux и статус
 compass_core) — fms узнаёт об остановке по протоколу.
@@ -565,9 +579,12 @@ Feedback Nav2 лежит в `feedback_json.backend`; в `/compass/nav_status` �
 
 ### 4.5 СТОП и отмена
 
-- `/compass/stop` → обнулить teleop + `/task_orchestrator/stop` (`StopTasksV1`, `source: compass`) —
+- `/compass/stop` → блокировка twist_mux (`locks.stop`: `compass_stop_lock`, `std_msgs/Bool`,
+  приоритет 255 — ни джойстик, ни Nav2) + обнулить teleop + `/task_orchestrator/stop` (`StopTasksV1`, `source: compass`) —
   отменяет все задачи с `cancel_on_stop: true`, в том числе запущенные агентом; агент сообщает fms
-  `safetyState.eStop = REMOTE`. Снимается кнопкой в Compass. Блокировка twist_mux — вместе с агентом.
+  `safetyState.eStop = REMOTE`. Пока СТОП нажат: `status.estop = true`, цели отклоняются
+  (`MODE_NOT_ALLOWED`), допуск оркестратора `emergency_stop_active`. Снимается `/compass/stop/release`
+  (в UI кнопка становится «Снять СТОП», с подтверждением). События `STOP_PRESSED`, `STOP_RELEASED`.
 - `/compass/nav/cancel` → `/task_orchestrator/cancel_tasks` (`CancelTasksV1`) с `task_id` сервисной цели.
 
 ### 4.6 Что UI читает напрямую
@@ -586,18 +603,29 @@ Feedback Nav2 лежит в `feedback_json.backend`; в `/compass/nav_status` �
 
 ---
 
-## 5. HTTP (nginx)
+## 5. HTTP (compass_web)
+
+Веб-сервер робота — нода `compass_web` (пакет `compass_web`, Python + Tornado из зависимостей
+rosbridge, отдельного веб-сервера ставить не нужно). Запускается в `web.launch.py` (входит в `compass.launch.py`), параметры —
+`compass_web.yaml` в каталоге конфигов робота (`robot_config`, образец — `compass_sim/config`): `port` (8080; на роботе 80 —
+`AmbientCapabilities=CAP_NET_BIND_SERVICE` в unit-файле), `ui_dir` (собранный `dist/`),
+`rosbridge_url`, `ros_log_dir`, `max_upload_mb`; `data_dir` — из launch, общий с compass_core.
+В разработке Vite проксирует `/rosbridge` и `/files` на него же — dev и робот работают одинаково.
 
 | Путь | Метод | Что |
 |---|---|---|
 | `/` и всё неизвестное | GET | статика UI; **SPA fallback** на `index.html` |
 | `/rosbridge` | WS | прокси на `127.0.0.1:9090` |
 | `/files/maps/{id}/{map.yaml, map.pgm, map.posegraph, map.data}` | GET | файлы карты; превью UI рисует из `map.pgm`, экспорт `.zip` собирает в браузере |
-| `/files/logs/` | GET | журнал compass_core: WARN+ со всех нод, `compass-YYYY-MM-DD.log` (JSON-строки), 7 дней; каталог — JSON-листингом nginx |
+| `/files/logs/` | GET | журнал compass_core: WARN+ со всех нод, `compass-YYYY-MM-DD.log` (JSON-строки), 7 дней; каталог — JSON-листингом |
 | `/files/ros_log/` | GET | логи ROS 2 (`ROS_LOG_DIR`): файл на процесс ноды + папка на запуск с `launch.log`; «Журнал → Скачать логи» собирает zip за период по `mtime` |
 | `/files/uploads/{upload_id}/{map.yaml, map.pgm, map.posegraph, map.data}` | PUT | загрузка для импорта (из `.zip` экспорта или отдельных файлов); затем `/compass/maps/import` |
 
-Хранилище — общее для compass_core и nginx:
+Каталоги на чтение отдаются JSON-листингом (формат nginx `autoindex_format json`):
+`[{ name, type: file | directory, mtime, size }]`. Путь не может выйти за каталог (`../` → 404),
+`uploads` — только PUT, остальное — только GET.
+
+Хранилище — общее для compass_core и compass_web:
 ```
 /var/lib/robot/
   maps/{id}/map.yaml, map.pgm, map.posegraph, map.data, meta.yaml
@@ -612,38 +640,7 @@ Feedback Nav2 лежит в `feedback_json.backend`; в `/compass/nav_status` �
 - `map.posegraph` + `map.data` — `/slam_toolbox/serialize_map`; без них карту можно только
   использовать, но не продолжить (`has_posegraph = false`).
 - `meta.yaml` — имя, размер, origin, время создания и изменения.
-- В разработке без робота `/files` отдаёт dev-сервер Vite из `~/.local/share/compass`
-  (`data_dir` compass_core в `sim.launch.py`).
-
-Пример nginx:
-```nginx
-server {
-  listen 80;
-  root /opt/compass/ui;                       # dist/ из compass-ui
-
-  location / { try_files $uri $uri/ /index.html; }
-
-  location /rosbridge {
-    proxy_pass http://127.0.0.1:9090;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_read_timeout 1h;
-  }
-
-  location /files/maps/ { alias /var/lib/robot/maps/; }
-  location /files/logs/ { alias /var/lib/robot/logs/; autoindex on; autoindex_format json; }
-  location /files/ros_log/ { alias /var/lib/robot/ros_log/; autoindex on; autoindex_format json; }
-
-  location /files/uploads/ {
-    alias /var/lib/robot/uploads/;
-    dav_methods PUT;
-    create_full_put_path on;
-    client_max_body_size 200m;
-    limit_except PUT { deny all; }
-  }
-}
-```
+- В симуляции `data_dir` — `~/.local/share/compass` (`compass_sim sim.launch.py`).
 
 ## 6. rosbridge: запуск и белые списки
 
@@ -656,7 +653,7 @@ server {
 Штатный launch ещё и запускает `rosapi`, а rosbridge **сам разрешает `/rosapi/*`** — через него
 видны все топики и сервисы робота. Поэтому запускаем только ноду `rosbridge_websocket`:
 
-Слушает только localhost — снаружи доступен лишь через nginx. Разрешено ровно то, что нужно UI.
+Слушает только localhost — снаружи доступен лишь через `compass_web` (`/rosbridge`). Разрешено ровно то, что нужно UI.
 
 ```yaml
 # параметры ноды rosbridge_server/rosbridge_websocket (в launch compass_bringup)
@@ -817,14 +814,16 @@ string[] changed_keys            # например ["battery.min_task_percent"]
 ```
 
 ```
-# VdaStatus.msg — /vda5050/status (публикует агент)
-string connection                # ONLINE | OFFLINE | CONNECTIONBROKEN — связь с брокером fms
-string order_id                  # пусто — order'а нет
+# VdaStatus.msg — /vda5050/status (публикует агент; при изменении и раз в секунду)
+string connection                # ONLINE | OFFLINE — связь агента с брокером fms
+string order_id                  # пусто — order'ов ещё не было; после завершения остаётся последний
 uint32 order_update_id
+bool order_active                # order выполняется (робот не idle, VDA 6.6.8): «Перехватить» → INTERVENED
 string last_node_id
 bool driving
 bool paused
-StatusError[] errors             # ошибки VDA (errorType, errorLevel → code, message)
+bool new_base_request            # робот на decision point, ждёт продления маршрута от fms
+StatusError[] errors             # ошибки VDA: code — errorType, message — errorDescription
 ```
 
 ```
@@ -846,6 +845,7 @@ builtin_interfaces/Time updated_at
 string lease_id
 float32 linear                   # м/с, compass_core обрежет по лимитам
 float32 angular                  # рад/с
+float32 lateral                  # м/с вбок, влево — плюс; только у робота с capability holonomic
 ```
 
 ```
@@ -868,7 +868,7 @@ string serial_number
 string manufacturer
 string model
 diagnostic_msgs/KeyValue[] versions          # compass, ros, firmware, …
-string[] capabilities                        # mapping, navigation, continue_mapping, scan_stream
+string[] capabilities                        # mapping, navigation, continue_mapping, scan_stream, holonomic
 ```
 
 ```
@@ -998,7 +998,7 @@ uint16 limit
 bool success
 string error_code
 string message
-Event[] events                               # новые первыми
+Event[] events                               # новые первыми; stamp — по часам робота (не sim time)
 ```
 
 ```
@@ -1024,7 +1024,7 @@ string response_json
 
 ## 8. Что меняется по сравнению с v0
 
-- Нет своего REST и своего WS: **rosbridge + nginx**. Писать на C++ — только `compass_core`.
+- Нет своего REST и своего WS: **rosbridge + compass_web** (файлы и прокси). Писать на C++ — только `compass_core`.
 - `clientId` больше не id WS-сессии: клиент сам себя называет, право подтверждает `lease_id`,
   жизнь аренды — heartbeat.
 - Сторожевой таймер джойстика — **twist_mux**, а не свой код.
@@ -1058,7 +1058,7 @@ v1.3 (2026-10-24):
 |---|---|---|
 | 2026-10-02 | Задачи от флота | да, агент VDA 5050 в разработке |
 | 2026-10-24 | Агент и compass_core | соседи; кто командует — режим работы VDA (§3.1, §3.6) |
-| 2026-10-24 | HTTP на роботе | nginx: статика, файлы, прокси WebSocket rosbridge |
+| 2026-10-24 | HTTP на роботе | ~~nginx~~ → нода `compass_web` (Tornado): статика, файлы, прокси WebSocket rosbridge; без лишнего пакета при развёртывании |
 | 2026-10-24 | SLAM в TEACH_IN | дочерний процесс compass_core (`slam.launch.py`), свой на каждый вход |
 | 2026-10-24 | Сохранение карты | compass_core сам пишет PGM+YAML из `/map`, posegraph — `serialize_map`; без `map.png`: превью UI рисует из `map.pgm` |
 | 2026-10-02 | Порог батареи | настраивается в Compass, общий файл конфига для всех компонентов (§3.5) |

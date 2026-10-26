@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch, onMounted } from 'vue'
-import { NConfigProvider, NMessageProvider, darkTheme } from 'naive-ui'
+import { NConfigProvider, NDialogProvider, NMessageProvider, darkTheme } from 'naive-ui'
 import { useMediaQuery } from '@vueuse/core'
 import AppSidebar from './components/AppSidebar.vue'
 import AppTopbar from './components/AppTopbar.vue'
@@ -35,17 +35,19 @@ const themeOverrides = computed(() => ({
 
 <template>
   <NConfigProvider :theme="naiveTheme" :theme-overrides="themeOverrides">
-    <NMessageProvider placement="bottom-right">
-      <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-        <AppSidebar :collapsed="collapsed" @toggle="collapsed = !collapsed" />
-        <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <AppTopbar />
-          <OfflineBanner />
-          <main class="flex-1 overflow-auto p-4 lg:p-6">
-            <RouterView />
-          </main>
+    <NDialogProvider>
+      <NMessageProvider placement="bottom-right">
+        <div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+          <AppSidebar :collapsed="collapsed" @toggle="collapsed = !collapsed" />
+          <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <AppTopbar />
+            <OfflineBanner />
+            <main class="flex-1 overflow-auto p-4 lg:p-6">
+              <RouterView />
+            </main>
+          </div>
         </div>
-      </div>
-    </NMessageProvider>
+      </NMessageProvider>
+    </NDialogProvider>
   </NConfigProvider>
 </template>
