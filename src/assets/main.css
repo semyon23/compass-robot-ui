@@ -51,6 +51,15 @@ body {
   color: #e2e8f0;
 }
 
+/* Скроллбары — тонкие, в цвет интерфейса (события, логи, панели). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.dark * {
+  scrollbar-color: #334155 transparent;
+}
+
 /* Карточки боковых панелей экранов (Управление, Картографирование). */
 @layer components {
   .panel-card {

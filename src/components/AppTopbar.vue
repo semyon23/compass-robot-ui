@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import ModeBadge from './ModeBadge.vue'
 import { useRobotStore } from '../stores/robot'
 import ConnectionIndicator from './ConnectionIndicator.vue'
+import ControlIndicator from './ControlIndicator.vue'
 import StopButton from './StopButton.vue'
 import AppClock from './AppClock.vue'
 
@@ -24,6 +25,7 @@ const title = computed(() => (route.meta?.title ? t(route.meta.title) : 'Compass
     </div>
     <div class="flex items-center gap-3 lg:gap-4">
       <span v-if="robot.info" class="hidden font-mono text-sm text-slate-600 md:inline dark:text-slate-300">{{ robot.info.robotName }}</span>
+      <ControlIndicator />
       <ConnectionIndicator />
       <StopButton />
       <AppClock class="border-l border-slate-200 pl-3 lg:pl-4 dark:border-slate-800" />

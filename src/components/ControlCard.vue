@@ -1,13 +1,14 @@
 <script setup>
-import { computed, ref, onBeforeUnmount } from 'vue'
+import { computed, ref } from 'vue'
 import { NButton, NPopconfirm, useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useRobotStore } from '../stores/robot'
 import { errorText } from '../lib/errorText'
 
 /**
- * Захват / отдача / перехват управления. При уходе с экрана управление отдаётся
- * (ручное движение останавливается, активная цель Nav2 продолжается — ROS_INTERFACES §3.2).
+ * Захват / отдача / перехват управления. Управление держится, пока открыта вкладка, — и на других
+ * экранах (там его можно отдать из верхней панели). Активная цель Nav2 при отдаче продолжается
+ * (ROS_INTERFACES §3.2).
  */
 const { t } = useI18n()
 const message = useMessage()
@@ -29,10 +30,6 @@ async function run(action) {
 }
 const acquire = (force = false) => run(() => robot.acquireControl(force))
 const release = () => run(() => robot.releaseControl())
-
-onBeforeUnmount(() => {
-  if (owner.value === 'me') robot.releaseControl().catch(() => {})
-})
 </script>
 
 <template>
