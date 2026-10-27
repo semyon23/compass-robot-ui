@@ -201,7 +201,7 @@ export const useRobotStore = defineStore('robot', () => {
     if (id) await robotApi.releaseControl(id)
   }
 
-  /** Цель (kind = goal) или маршрут (route, mode = waypoints | through_poses) — с арендой этой вкладки. */
+  /** Цель (kind = goal) или маршрут (route, mode = waypoints | line) — с арендой этой вкладки. */
   function navStart(kind, mode, poses) {
     return navApi.navStart(leaseId.value || '', kind, mode, poses)
   }

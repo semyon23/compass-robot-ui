@@ -120,6 +120,7 @@ function eta(sec) {
 // ---------- Маршрут ----------
 
 const routeMode = useLocalStorage('compass.routeMode', 'waypoints')
+if (routeMode.value === 'through_poses') routeMode.value = 'line' // режим переименован (через ломаную, а не через планировщик)
 
 function move(i, dir) {
   const next = [...draft.value]
@@ -224,7 +225,7 @@ const fmtPose = (p) => `${p.x.toFixed(2)}, ${p.y.toFixed(2)} · ${Math.round((p.
     <h2 class="panel-title">{{ t('navi.route') }}</h2>
     <NRadioGroup v-model:value="routeMode" size="small" class="mb-2 flex">
       <NRadioButton value="waypoints" class="flex-1 text-center">{{ t('navi.mode_waypoints') }}</NRadioButton>
-      <NRadioButton value="through_poses" class="flex-1 text-center">{{ t('navi.mode_through_poses') }}</NRadioButton>
+      <NRadioButton value="line" class="flex-1 text-center">{{ t('navi.mode_line') }}</NRadioButton>
     </NRadioGroup>
     <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">{{ t(`navi.help_${routeMode}`) }}</p>
 

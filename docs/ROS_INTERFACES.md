@@ -30,7 +30,7 @@ dist/ UI     /var/lib/robot/                rosbridge_server (apt, 2.7.x)
              конфиг, джойстик, СТОП                                                по рёбрам напрямую в Nav2)
                  │ сервисные цели (SERVICE)                                   │ FollowPath
                  ▼                                                            ▼
-             Nav2: navigate_to_pose, follow_waypoints, navigate_through_poses, controller_server
+             Nav2: navigate_to_pose, follow_waypoints, follow_path (маршрут «по линии»)
 ```
 
 - **rosbridge** — всё «живое» для UI: состояние, поза, скан, карта, путь, события, команды.
@@ -326,7 +326,7 @@ twist_mux:
 Сервисные цели — только в режиме `SERVICE` (свободная езда через планировщик Nav2; в работе с fms
 робот ездит только по рёбрам — это делает агент, `FollowPath` напрямую).
 
-`NavStart`: `kind` = `goal` (одна поза) или `route` (`mode` = `waypoints` | `through_poses`).
+`NavStart`: `kind` = `goal` (одна поза) или `route` (`mode` = `waypoints` | `line`).
 compass_core проверяет режим и аренду, ставит цель в Nav2 (§4) и ведёт `/compass/nav_status`
 по её прогрессу.
 
@@ -419,9 +419,29 @@ compass_core) — fms узнаёт об остановке по протокол
 |---|---|---|
 | `goal` | `/navigate_to_pose` (`NavigateToPose`) | bt_navigator |
 | `route` / `waypoints` | `/follow_waypoints` (`FollowWaypoints`) — остановка в каждой точке | waypoint_follower |
-| `route` / `through_poses` | `/navigate_through_poses` (`NavigateThroughPoses`) — без остановки | bt_navigator |
+| `route` / `line` | `/follow_path` (`FollowPath`) — по линии через точки, без остановки | controller_server |
 
 Позы `Pose2D` → `PoseStamped` (`frame_id` = `map_frame`, θ → кватернион, stamp нулевой — последний TF).
+
+**Маршрут «по линии»** (`line`, с 2026-10-27 вместо `through_poses`). `navigate_through_poses` не
+держит линию маршрута: раз в секунду планировщик строит новый путь от робота к оставшимся точкам,
+точка засчитана, если робот прошёл в `radius` от неё, — в комнате с точками через 0,5 м робот
+срезал на 20–45 см. Поэтому compass_core сам строит ломаную: от позы робота через точки, шаг 5 см,
+ориентация вдоль отрезков, в последней точке — её θ; и отдаёт её контроллеру (`FollowPath`),
+без планировщика (так же агент возит робота по рёбрам fms). Этот путь compass_core публикует
+в `/plan` — на карте Compass он рисуется так же, как путь планировщика. Прогресс (`index`,
+`distance_remaining`) — проекция позы робота на линию: `distance_to_goal` контроллера для этого
+не годится (завышен в начале, замирает на поворотах).
+
+- **Препятствия.** MPPI обходит мелкие, если рядом есть место, и возвращается на линию. Перед
+  непроходимым встаёт (collision_monitor); контроллер через ~10 с сдаётся — compass_core перезапускает
+  остаток части от позы робота, до 6 раз (около минуты), потом `failed` / `STUCK`. Число
+  перезапусков — в `NavStatus.recoveries`.
+- **Петли.** MPPI и goal_checker в Jazzy меряют расстояние до конца пути по прямой: если линия задолго
+  до конца проходит ближе `threshold_to_consider` (GoalCritic, PathFollowCritic) к нему, робот поехал
+  бы прямо к концу. Поэтому линия режется на части в точке, после которой она подошла бы к концу
+  части ближе `route_loop_gap` (`compass_core.yaml`, не меньше этого порога); части едут подряд,
+  на стыке короткое торможение.
 
 Функции робота (докинг, лифт, зарядка), когда появятся, — так же: типизированный клиент своего
 action'а (для докинга — `DockRobot` из Nav2) в compass_core или в агенте.
@@ -432,8 +452,7 @@ action'а (для докинга — `DockRobot` из Nav2) в compass_core ил
   Nav2 отклонил — `INTERNAL`; не ответил за 5 с — `INTERNAL` («Nav2 не ответил на цель»), а если
   он примет её позже, compass_core её сразу отменит.
 - **Новая цель заменяет предыдущую**: compass_core отменяет прежнюю и отправляет новую через
-  0,3–0,8 с после того, как Nav2 её завершил. Сразу нельзя: `navigate_to_pose` и
-  `navigate_through_poses` делят один bt_navigator, а `follow_waypoints` отвечает «отменено»
+  0,3–0,8 с после того, как Nav2 её завершил. Сразу нельзя: `follow_waypoints` отвечает «отменено»
   раньше, чем bt_navigator закончил свою `navigate_to_pose`, — цель в эти миллисекунды
   прерывается. Прежняя не завершилась за 5 с — `BUSY`.
 - Отмена, пришедшая раньше, чем Nav2 принял цель, выполняется сразу после приёма.
@@ -445,7 +464,7 @@ Feedback Nav2 → `/compass/nav_status`, не чаще 2 Гц:
 | Action | Поля Nav2 → `NavStatus` |
 |---|---|
 | `navigate_to_pose` | `distance_remaining`, `estimated_time_remaining` → `eta`, `number_of_recoveries` → `recoveries` |
-| `navigate_through_poses` | то же + `number_of_poses_remaining` → `index = poses.length − remaining` |
+| `follow_path` (`line`) | поза робота проецируется на линию (окно −0.3…+1 м от прошлого положения) → `distance_remaining`; `index` — первая точка, до которой не доехали по линии (с запасом 15 см); `eta = остаток / speed` |
 | `follow_waypoints` | `current_waypoint` → `index`; расстояния в feedback нет → `distance_remaining = -1` (UI скрывает) |
 
 ### 4.4 Итог и коды ошибок
@@ -672,7 +691,7 @@ string goal_id                   # id цели, выдаёт compass_core; пу�
 string source                    # compass
 string operator_name             # для source = compass — client_name владельца аренды
 string kind                      # goal | route
-string mode                      # waypoints | through_poses (для route)
+string mode                      # waypoints | line (для route)
 Pose2D[] poses                   # для goal — одна
 uint32 index                     # к какой точке едем
 string state                     # active | succeeded | failed | canceled
@@ -859,7 +878,7 @@ MapInfo map
 # NavStart.srv
 string lease_id
 string kind                                  # goal | route
-string mode                                  # waypoints | through_poses (для route)
+string mode                                  # waypoints | line (для route)
 Pose2D[] poses                               # 1..100
 ---
 bool success
@@ -935,6 +954,8 @@ v1.4 (2026-10-27):
 - `ros2_task_orchestrator` убран: compass_core ставит сервисные цели прямо в Nav2 (§4). Настоящие
   коды ошибок (`NO_PATH`, `STUCK`), замена цели без очереди; нет `tasks.yaml`, `tasks.db`,
   `/task_orchestrator/*` в белых списках.
+- Маршрут `through_poses` (NavigateThroughPoses) заменён на `line`: ломаная через точки в `FollowPath`
+  контроллера (§4.1) — робот едет точно по линии, а не срезает.
 
 ## 9. Открытые вопросы к Семёну
 
