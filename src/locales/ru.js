@@ -301,6 +301,7 @@ export default {
     minSec: '{m} мин {s} с',
     cancel: 'Отменить',
     repeat: 'Повторить',
+    editRoute: 'Изменить',
     routeEmpty: 'Точек нет. Нажмите «Добавить точки» и ставьте их на карте.',
     addPoints: 'Добавить точки',
     doneAdding: 'Готово',

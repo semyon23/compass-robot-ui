@@ -111,6 +111,12 @@ function repeat() {
   run(() => robot.navStart(n.kind, n.mode, n.poses))
 }
 
+// Точки прошлого маршрута — снова в редактор: поменять режим или точки и поехать ещё раз.
+function editRoute() {
+  draft.value = nav.value.poses.map((p) => ({ x: p.x, y: p.y, theta: p.theta }))
+  routeMode.value = nav.value.mode === 'waypoints' ? 'waypoints' : 'line'
+}
+
 function eta(sec) {
   if (sec == null) return '—'
   const s = Math.round(sec)
@@ -211,7 +217,10 @@ const fmtPose = (p) => `${p.x.toFixed(2)}, ${p.y.toFixed(2)} · ${Math.round((p.
       <NButton v-if="nav.state === 'active'" block type="error" ghost :loading="busy" @click="cancel">
         {{ t('navi.cancel') }}
       </NButton>
-      <NButton v-else block :loading="busy" :disabled="!canCommand" @click="repeat">{{ t('navi.repeat') }}</NButton>
+      <div v-else class="grid gap-2" :class="nav.kind === 'route' ? 'grid-cols-2' : ''">
+        <NButton :loading="busy" :disabled="!canCommand" @click="repeat">{{ t('navi.repeat') }}</NButton>
+        <NButton v-if="nav.kind === 'route'" @click="editRoute">{{ t('navi.editRoute') }}</NButton>
+      </div>
     </div>
     <div v-else-if="navRunning" class="text-sm text-slate-400">{{ t('navi.noGoal') }}</div>
 

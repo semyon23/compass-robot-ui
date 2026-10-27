@@ -301,6 +301,7 @@ export default {
     minSec: '{m} min {s} s',
     cancel: 'Cancel',
     repeat: 'Repeat',
+    editRoute: 'Edit',
     routeEmpty: 'No points. Press "Add points" and place them on the map.',
     addPoints: 'Add points',
     doneAdding: 'Done',
