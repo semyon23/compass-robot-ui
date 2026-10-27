@@ -39,7 +39,7 @@ const follow = defineModel('follow', { type: Boolean, default: true })
 const emit = defineEmits(['pick'])
 
 const { t } = useI18n()
-const { isDark, brand } = useTheme()
+const { isDark } = useTheme()
 const robotLook = useRobotLook()
 
 const wrap = ref(null)
@@ -86,7 +86,7 @@ function draw() {
   drawDraft(c)
   drawParticles(c)
   drawScan(c)
-  drawRobot()
+  drawRobot(c)
   drawPick(c)
   drawScaleBar(c)
 }
@@ -355,8 +355,9 @@ function drawScan(c) {
   }
 }
 
-// Робот — цвет выбранной гаммы (brand-800, в тёмной теме brand-400), вид — из настроек интерфейса.
-function drawRobot() {
+// Робот — свой цвет (MAP_COLORS.robot), вид — из настроек интерфейса. Ореол выделяет его на
+// любой карте, конус показывает, куда он смотрит, издалека.
+function drawRobot(c) {
   const p = props.pose
   if (!p) return
   const [px, py] = toScreen(p.x, p.y)
@@ -365,7 +366,26 @@ function drawRobot() {
   ctx.translate(px, py)
   // Экранная ось Y вниз → угол мира с минусом.
   ctx.rotate(-p.theta)
-  drawRobotShape(ctx, robotLook.kind.value, r, isDark.value ? brand.value[400] : brand.value[800])
+
+  const halo = ctx.createRadialGradient(0, 0, r * 0.8, 0, 0, r * 2)
+  halo.addColorStop(0, `${c.robot}66`)
+  halo.addColorStop(1, `${c.robot}00`)
+  ctx.fillStyle = halo
+  ctx.beginPath()
+  ctx.arc(0, 0, r * 2, 0, Math.PI * 2)
+  ctx.fill()
+
+  const beam = ctx.createLinearGradient(r, 0, r * 2.6, 0)
+  beam.addColorStop(0, `${c.robot}80`)
+  beam.addColorStop(1, `${c.robot}00`)
+  ctx.fillStyle = beam
+  ctx.beginPath()
+  ctx.moveTo(r * 0.6, 0)
+  ctx.arc(r * 0.6, 0, r * 2, -0.4, 0.4)
+  ctx.closePath()
+  ctx.fill()
+
+  drawRobotShape(ctx, robotLook.kind.value, r, c.robot)
   ctx.restore()
 }
 
@@ -546,7 +566,7 @@ watch(() => props.map, (m) => {
 
 watch(
   () => [props.pose, props.scan, props.map, props.path, props.localPlan, props.particles, props.localCostmap,
-    props.globalCostmap, props.fmsPath, props.nav, props.draft, props.tool, follow.value, isDark.value, brand.value, robotLook.kind.value],
+    props.globalCostmap, props.fmsPath, props.nav, props.draft, props.tool, follow.value, isDark.value, robotLook.kind.value],
   requestDraw,
   { deep: false },
 )

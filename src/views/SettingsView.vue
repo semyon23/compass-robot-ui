@@ -10,6 +10,7 @@ import { useRobotLook } from '../composables/useRobotLook'
 import { ROBOT_KINDS } from '../lib/robotShapes'
 import { SCHEMES } from '../lib/schemes'
 import RobotIcon from '../components/RobotIcon.vue'
+import { MAP_COLORS } from '../lib/mapColors'
 import RobotSettings from '../components/RobotSettings.vue'
 
 const { t, locale } = useI18n()
@@ -20,7 +21,7 @@ const robot = useRobotStore()
 const robotLook = useRobotLook()
 
 // Робот в превью — тем же цветом, что на карте.
-const robotColor = computed(() => (theme.isDark.value ? theme.brand.value[400] : theme.brand.value[800]))
+const robotColor = computed(() => (theme.isDark.value ? MAP_COLORS.dark : MAP_COLORS.light).robot)
 const SWATCH_STEPS = [200, 400, 600, 800, 950]
 
 const tileClass = (active) => [

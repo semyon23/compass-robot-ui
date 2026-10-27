@@ -20,8 +20,8 @@ function draw() {
   const ctx = el.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, props.size, props.size)
-  // «Вперёд» — вверх, как привычно на картинке; стрелка выходит за корпус на 0.35 r.
-  ctx.translate(props.size / 2, props.size / 2 + props.size * 0.06)
+  // «Вперёд» — вверх, как привычно на картинке.
+  ctx.translate(props.size / 2, props.size / 2)
   ctx.rotate(-Math.PI / 2)
   drawRobotShape(ctx, props.kind, props.size * 0.32, props.color)
 }

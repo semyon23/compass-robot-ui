@@ -6,35 +6,42 @@
 export const ROBOT_KINDS = ['diff', 'mecanum', 'omni', 'ackermann', 'tracked', 'round']
 export const DEFAULT_ROBOT_KIND = 'diff'
 
+// Корпус — сплошной цвет робота с белым контуром, колёса — графит, «вперёд» — белая стрелка
+// на корпусе. Ореол и конус направления рисует карта (MapCanvas), в иконке их нет.
+const OUTLINE = '#ffffff'
+const WHEEL = '#1e293b'
+
 export function drawRobotShape(ctx, kind, r, color) {
   ctx.save()
-  ctx.strokeStyle = color
+  ctx.strokeStyle = OUTLINE
   ctx.fillStyle = color
-  ctx.lineWidth = Math.max(1.5, r / 12)
+  ctx.lineWidth = Math.max(1.5, r / 10)
   ctx.lineJoin = 'round'
   ;(SHAPES[kind] || SHAPES.round)(ctx, r)
-  arrow(ctx, r)
+  dart(ctx, r)
   ctx.restore()
 }
 
-// Корпус: полупрозрачная заливка + контур.
+// Корпус: сплошная заливка + белый контур — виден и на стенах, и на свободном месте.
 function body(ctx, path) {
   ctx.beginPath()
   path()
-  ctx.globalAlpha = 0.18
   ctx.fill()
-  ctx.globalAlpha = 1
   ctx.stroke()
 }
 
-// Колесо — сплошной прямоугольник (x, y — центр, w — вдоль хода, h — поперёк), angle — поворот.
+// Колесо — графитовый прямоугольник с тонким белым контуром (x, y — центр, w — вдоль хода,
+// h — поперёк), angle — поворот.
 function wheel(ctx, x, y, w, h, angle = 0) {
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(angle)
   ctx.beginPath()
   ctx.roundRect(-w / 2, -h / 2, w, h, Math.min(w, h) * 0.3)
+  ctx.fillStyle = WHEEL
   ctx.fill()
+  ctx.lineWidth = Math.max(1, h / 8)
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -59,18 +66,22 @@ function rect(ctx, x0, y0, x1, y1, radius) {
   ctx.roundRect(x0, y0, x1 - x0, y1 - y0, radius)
 }
 
-// Стрелка «вперёд»: выходит за корпус, но не закрывает колёса.
-function arrow(ctx, r) {
+// «Вперёд» — белая стрелка с вырезом сзади, как значок навигатора.
+function dart(ctx, r) {
+  ctx.save()
+  ctx.fillStyle = OUTLINE
   ctx.beginPath()
-  ctx.moveTo(r * 1.35, 0)
-  ctx.lineTo(r * 0.7, -r * 0.34)
-  ctx.lineTo(r * 0.7, r * 0.34)
+  ctx.moveTo(r * 0.5, 0)
+  ctx.lineTo(-r * 0.3, -r * 0.36)
+  ctx.lineTo(-r * 0.1, 0)
+  ctx.lineTo(-r * 0.3, r * 0.36)
   ctx.closePath()
   ctx.fill()
+  ctx.restore()
 }
 
 const SHAPES = {
-  // Круг — как было до выбора внешнего вида.
+  // Круг — без колёс.
   round(ctx, r) {
     body(ctx, () => ctx.arc(0, 0, r, 0, Math.PI * 2))
   },
@@ -82,6 +93,7 @@ const SHAPES = {
     wheel(ctx, 0, r * 0.78, r * 0.62, r * 0.24)
     ctx.beginPath()
     ctx.arc(-r * 0.62, 0, r * 0.12, 0, Math.PI * 2)
+    ctx.fillStyle = WHEEL
     ctx.fill()
   },
 
@@ -108,16 +120,12 @@ const SHAPES = {
     }
   },
 
-  // Автомобильная схема (Аккерман): вытянутый корпус, поворотные колёса спереди, бампер.
+  // Автомобильная схема (Аккерман): вытянутый корпус, четыре колеса.
   ackermann(ctx, r) {
     body(ctx, () => rect(ctx, -r * 0.95, -r * 0.5, r * 0.95, r * 0.5, r * 0.18))
     for (const [x, y] of [[0.55, -0.62], [0.55, 0.62], [-0.55, -0.62], [-0.55, 0.62]]) {
       wheel(ctx, x * r, y * r, r * 0.42, r * 0.2)
     }
-    ctx.beginPath()
-    ctx.moveTo(r * 0.55, -r * 0.62)
-    ctx.lineTo(r * 0.55, r * 0.62)
-    ctx.stroke()
   },
 
   // Гусеничный: корпус между двумя гусеницами с траками.
