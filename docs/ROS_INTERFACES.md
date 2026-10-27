@@ -754,6 +754,7 @@ string robot_name
 string serial_number
 string manufacturer
 string model
+float32 robot_radius                         # м, параметр robot_radius compass_core — значок робота на карте
 diagnostic_msgs/KeyValue[] versions          # compass, ros, firmware, …
 string[] capabilities                        # mapping, navigation, continue_mapping, scan_stream, holonomic
 ```

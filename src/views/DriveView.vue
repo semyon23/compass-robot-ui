@@ -155,6 +155,7 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
       <MapCanvas
         v-model:follow="follow"
         :pose="pose"
+        :robot-radius="robot.info?.robotRadius ?? undefined"
         :scan="layers.scan ? robot.scan : null"
         :map="layers.map ? robot.liveMap : null"
         :tool="tool"

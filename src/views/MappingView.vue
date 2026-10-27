@@ -249,7 +249,13 @@ const sizeText = computed(() => {
     <div
       class="relative min-h-[360px] flex-1 overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
     >
-      <MapCanvas v-model:follow="follow" :pose="robot.pose" :scan="robot.scan" :map="robot.liveMap" />
+      <MapCanvas
+        v-model:follow="follow"
+        :pose="robot.pose"
+        :robot-radius="robot.info?.robotRadius ?? undefined"
+        :scan="robot.scan"
+        :map="robot.liveMap"
+      />
       <div
         class="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded bg-white/90 px-2.5 py-1.5 text-xs font-semibold dark:bg-slate-900/90"
       >

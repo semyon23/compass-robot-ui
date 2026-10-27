@@ -361,6 +361,7 @@ export const useRobotStore = defineStore('robot', () => {
         serialNumber: r.serial_number,
         manufacturer: r.manufacturer,
         model: r.model,
+        robotRadius: r.robot_radius || null, // 0 — старый compass_core: карта возьмёт свой радиус
         versions: objectOf(r.versions),
         capabilities: r.capabilities || [],
       }

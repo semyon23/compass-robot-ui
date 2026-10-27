@@ -23,7 +23,7 @@ const props = defineProps({
   scan: { type: Array, default: null }, // [[x, y], ...] в том же фрейме, что поза
   // { width, height, resolution, origin: [x, y, theta], data } — как nav_msgs/OccupancyGrid
   map: { type: Object, default: null },
-  robotRadius: { type: Number, default: 0.3 },
+  robotRadius: { type: Number, default: 0.3 }, // м — из get_info (robot_radius в compass_core.yaml)
   tool: { type: String, default: null },
   path: { type: Array, default: null }, // глобальный путь Nav2 (/plan) [[x, y], ...]
   localPlan: { type: Array, default: null }, // траектория контроллера (/optimal_trajectory) [[x, y], ...]
