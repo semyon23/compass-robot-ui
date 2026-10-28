@@ -18,7 +18,8 @@ const COLOR_KEY = { scan: 'scan', particles: 'particles', plan: 'plan', localPla
 function swatch(key) {
   if (key === 'map') return { background: isDark.value ? '#e2e8f0' : '#1e293b' }
   if (key === 'telemetry') return { background: isDark.value ? '#475569' : '#cbd5e1' }
-  if (key.endsWith('Costmap')) return { background: 'linear-gradient(90deg, rgba(250,204,21,.45), rgba(220,38,38,.85))' }
+  // Палитра RViz (lib/mapTint.js): синий → красный, затем голубой (вплотную) и пурпурный (препятствие).
+  if (key.endsWith('Costmap')) return { background: 'linear-gradient(90deg, #0000ff, #ff0000 70%, #00ffff 70% 85%, #ff00ff 85%)' }
   return { background: (isDark.value ? MAP_COLORS.dark : MAP_COLORS.light)[COLOR_KEY[key]] }
 }
 </script>

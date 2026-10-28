@@ -44,10 +44,18 @@ export function gridCanvas(grid, palette) {
   return canvas
 }
 
+// Палитра «costmap» из RViz (MapDisplay): 1..98 — зона вокруг препятствий, от синего к красному
+// ближе к препятствию; 99 — робот задел бы препятствие корпусом (голубой); 100 — препятствие (пурпурный).
+const COSTMAP_PALETTE = Array.from({ length: 101 }, (_, v) => {
+  if (v === 99) return [0, 255, 255]
+  if (v === 100) return [255, 0, 255]
+  const r = Math.floor((255 * v) / 100)
+  return [r, 0, 255 - r]
+})
+
 /**
- * Карта стоимости Nav2 (nav_msgs/OccupancyGrid с costmap) → прозрачный canvas поверх карты.
- * 0 — свободно (прозрачно), 1..98 — зона вокруг препятствий: от жёлтого к красному, плотнее
- * к препятствию; 99 — робот задел бы препятствие корпусом; 100 — препятствие.
+ * Карта стоимости Nav2 (nav_msgs/OccupancyGrid с costmap) → canvas поверх карты в цветах RViz.
+ * 0 и неизвестное — прозрачно; остальное с непрозрачностью 0.7, как Alpha в RViz по умолчанию.
  */
 export function costmapCanvas(grid) {
   const { width, height, data } = grid
@@ -62,12 +70,12 @@ export function costmapCanvas(grid) {
     for (let x = 0; x < width; x++) {
       const v = data[src + x]
       if (v <= 0) continue
-      const k = Math.min(v, 99) / 99
+      const color = COSTMAP_PALETTE[Math.min(v, 100)]
       const i = (y * width + x) * 4
-      px[i] = 250 - 30 * k
-      px[i + 1] = 204 - 166 * k
-      px[i + 2] = 21 + 17 * k
-      px[i + 3] = v >= 100 ? 150 : 20 + 90 * k // полупрозрачно: стены карты видны сквозь
+      px[i] = color[0]
+      px[i + 1] = color[1]
+      px[i + 2] = color[2]
+      px[i + 3] = 179
     }
   }
   g.putImageData(img, 0, 0)
