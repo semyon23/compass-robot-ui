@@ -97,7 +97,7 @@ export const useRobotStore = defineStore('robot', () => {
   const pose = ref(null)
   const scan = ref(null)
   const liveMap = ref(null) // /map: { width, height, resolution, origin, data }
-  const navStatus = ref(null) // /compass/nav_status: текущая или последняя цель Compass
+  const navStatus = ref(null) // /compass/nav_status: текущая или последняя цель оператора Compass
   // Недостигнутые точки маршрута (номера с 1) — из события NAV_WAYPOINTS_MISSED: { goalId, points }.
   const navMissed = ref(null)
   // Для строки движения: цели, которые шли при открытой странице (итог показываем только им), закрытые
@@ -295,6 +295,9 @@ export const useRobotStore = defineStore('robot', () => {
       scan.value = pairs
     },
     nav: (msg) => {
+      // Цели агента VDA (source fms) — отрезки order'а: их показывает карточка fms и маршрут fms на карте,
+      // а не панель цели Compass. Последняя цель оператора при этом остаётся.
+      if (msg.source === 'fms') return
       // Пустой goal_id — целей ещё не было
       navStatus.value = msg.goal_id
         ? {
