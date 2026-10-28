@@ -17,6 +17,12 @@ const STREAMS = {
   scan: { topic: '/compass/scan_points', type: 'robot_interfaces/msg/ScanPoints' },
   // Препятствия камеры глубины (ниже луча лидара) — тот же формат, что скан.
   camera: { topic: '/compass/camera_points', type: 'robot_interfaces/msg/ScanPoints' },
+  // Видео камеры — JPEG-кадры; бинарно (CBOR, без base64), 10 кадров/с, без очереди.
+  video: {
+    topic: '/camera/camera/color/image_raw/compressed',
+    type: 'sensor_msgs/msg/CompressedImage',
+    options: { compression: 'cbor', throttle_rate: 100, queue_length: 1 },
+  },
   // Карта большая: бинарно (CBOR) и не чаще раза в секунду.
   map: { topic: '/map', type: 'nav_msgs/msg/OccupancyGrid', options: { compression: 'cbor', throttle_rate: 1000 } },
   nav: { topic: '/compass/nav_status', type: 'robot_interfaces/msg/NavStatus' },
@@ -99,6 +105,7 @@ export const useRobotStore = defineStore('robot', () => {
   const pose = ref(null)
   const scan = ref(null)
   const camera = ref(null)
+  const video = ref(null) // последний кадр камеры: { url (blob:), at }
   const liveMap = ref(null) // /map: { width, height, resolution, origin, data }
   const navStatus = ref(null) // /compass/nav_status: текущая или последняя цель оператора Compass
   // Недостигнутые точки маршрута (номера с 1) — из события NAV_WAYPOINTS_MISSED: { goalId, points }.
@@ -305,6 +312,10 @@ export const useRobotStore = defineStore('robot', () => {
     camera: (msg) => {
       camera.value = pointPairs(msg)
     },
+    video: (msg) => {
+      if (video.value) URL.revokeObjectURL(video.value.url)
+      video.value = { url: URL.createObjectURL(new Blob([msg.data], { type: 'image/jpeg' })), at: Date.now() }
+    },
     nav: (msg) => {
       // Цели агента VDA (source fms) — отрезки order'а: их показывает карточка fms и маршрут fms на карте,
       // а не панель цели Compass. Последняя цель оператора при этом остаётся.
@@ -417,6 +428,8 @@ export const useRobotStore = defineStore('robot', () => {
       pose.value = null
       scan.value = null
       camera.value = null
+      if (video.value) URL.revokeObjectURL(video.value.url)
+      video.value = null
       liveMap.value = null
       navPath.value = []
       fms.value = null
@@ -443,6 +456,7 @@ export const useRobotStore = defineStore('robot', () => {
     pose,
     scan,
     camera,
+    video,
     liveMap,
     navStatus,
     navMissed,

@@ -124,6 +124,7 @@ compass_core кладёт **код ошибки в `message`** (например
 | `/compass/pose` | `robot_interfaces/msg/RobotPose` | 10 Гц | best_effort, volatile | Управление, Картографирование |
 | `/compass/scan_points` | `robot_interfaces/msg/ScanPoints` | 5 Гц | best_effort, volatile | там же, `compression: cbor` |
 | `/compass/camera_points` | `robot_interfaces/msg/ScanPoints` | 5 Гц, если есть камера | best_effort, volatile | Управление |
+| `/camera/camera/color/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` | 15 Гц (UI берёт 10) | по издателю | окно «Видео камеры», `compression: cbor`, `throttle_rate: 100`, `queue_length: 1` |
 | `/compass/nav_status` | `robot_interfaces/msg/NavStatus` | при изменении + 2 Гц пока цель активна | reliable, transient_local, 1 | Управление |
 | `/compass/events` | `robot_interfaces/msg/Event` | по событию | reliable, volatile, 50 | всегда |
 | `/compass/config/changed` | `robot_interfaces/msg/ConfigChanged` | при `apply` | reliable, transient_local, 1 | Настройки |
@@ -588,7 +589,7 @@ rosbridge, отдельного веб-сервера ставить не нуж
 # параметры ноды rosbridge_server/rosbridge_websocket (в launch compass_bringup)
 address: "127.0.0.1"
 port: 9090
-topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/camera_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout]"
+topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/camera_points, /camera/camera/color/image_raw/compressed, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout]"
 topics_pub_glob: "[/compass/teleop, /compass/control/heartbeat, /initialpose]"
 services_glob: "[/compass/*, /robot/set_operating_mode, /robot/maps/activate]"
 actions_glob: "[]"
@@ -988,6 +989,8 @@ v1.5 (2026-10-28):
   текущую цель.
 - В `/plan` маршрута `line` — весь оставшийся маршрут; агент отдаёт его fms как `plannedPath`.
 - `/compass/camera_points` — препятствия камеры глубины на карте, как скан (§2).
+- Видео камеры — JPEG-кадры драйвера RealSense (`…/color/image_raw/compressed`) прямо через rosbridge,
+  бинарно (CBOR); робот сжимает кадры, только пока у топика есть подписчик (окно открыто).
 
 ## 9. Открытые вопросы к Семёну
 

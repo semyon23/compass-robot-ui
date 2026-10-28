@@ -9,6 +9,7 @@ import JoystickCard from '../components/JoystickCard.vue'
 import NavPanel from '../components/NavPanel.vue'
 import FmsCard from '../components/FmsCard.vue'
 import MapLayers from '../components/MapLayers.vue'
+import CameraVideo from '../components/CameraVideo.vue'
 import MotionStrip from '../components/MotionStrip.vue'
 import { MAP_LAYERS, useMapLayers } from '../composables/useMapLayers'
 import { useRobotStore } from '../stores/robot'
@@ -239,6 +240,7 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
           <dd class="col-span-2 pl-2 text-right">{{ pose.frame }}</dd>
         </dl>
       </MapCanvas>
+      <CameraVideo v-if="layers.video" @close="layers.video = false" />
     </div>
 
     <!-- Панель -->

@@ -17,6 +17,7 @@ const COLOR_KEY = { scan: 'scan', camera: 'camera', particles: 'particles', plan
 
 function swatch(key) {
   if (key === 'map') return { background: isDark.value ? '#e2e8f0' : '#1e293b' }
+  if (key === 'video') return { background: isDark.value ? '#334155' : '#0f172a' }
   if (key === 'telemetry') return { background: isDark.value ? '#475569' : '#cbd5e1' }
   // Палитра RViz (lib/mapTint.js): синий → красный, затем голубой (вплотную) и пурпурный (препятствие).
   if (key.endsWith('Costmap')) return { background: 'linear-gradient(90deg, #0000ff, #ff0000 70%, #00ffff 70% 85%, #ff00ff 85%)' }
