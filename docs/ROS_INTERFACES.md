@@ -123,6 +123,7 @@ compass_core кладёт **код ошибки в `message`** (например
 | `/compass/status` | `robot_interfaces/msg/RobotStatus` | при изменении + 1 Гц | reliable, transient_local, 1 | всегда |
 | `/compass/pose` | `robot_interfaces/msg/RobotPose` | 10 Гц | best_effort, volatile | Управление, Картографирование |
 | `/compass/scan_points` | `robot_interfaces/msg/ScanPoints` | 5 Гц | best_effort, volatile | там же, `compression: cbor` |
+| `/compass/camera_points` | `robot_interfaces/msg/ScanPoints` | 5 Гц, если есть камера | best_effort, volatile | Управление |
 | `/compass/nav_status` | `robot_interfaces/msg/NavStatus` | при изменении + 2 Гц пока цель активна | reliable, transient_local, 1 | Управление |
 | `/compass/events` | `robot_interfaces/msg/Event` | по событию | reliable, volatile, 50 | всегда |
 | `/compass/config/changed` | `robot_interfaces/msg/ConfigChanged` | при `apply` | reliable, transient_local, 1 | Настройки |
@@ -148,6 +149,10 @@ compass_core кладёт **код ошибки в `message`** (например
 - **`/vda5050/status`, `/vda5050/path`** — публикует агент: связь с fms, order, узел, base-маршрут.
 - **`/compass/scan_points`** — скан, уже переведённый в мировые координаты фрейма позы
   и прореженный (~360 точек). Так UI не нужны TF лазера.
+- **`/compass/camera_points`** — препятствия камеры глубины, тот же формат: точки облака
+  (`camera_topic` в конфиге compass_core; пусто — камеры нет, топик молчит) в полосе высот над полом
+  `camera_min_height`…`camera_max_height` и не дальше `camera_max_range` от камеры — те же, что слой
+  камеры в костмапе; по одной на клетку 2.5 см. Это то, что лежит ниже луча лидара.
 - **`/map`** — UI рисует `OccupancyGrid` сам (CBOR: `data` приходит как `Int8Array`).
   Большие карты: `max_message_size` rosbridge по умолчанию 10 МБ — карта 3000×3000 (9 МБ)
   ещё влезает, больше — поднять параметр.
@@ -583,7 +588,7 @@ rosbridge, отдельного веб-сервера ставить не нуж
 # параметры ноды rosbridge_server/rosbridge_websocket (в launch compass_bringup)
 address: "127.0.0.1"
 port: 9090
-topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout]"
+topics_sub_glob: "[/robot/operating_mode, /compass/status, /compass/pose, /compass/scan_points, /compass/camera_points, /compass/nav_status, /compass/events, /compass/config/changed, /behavior_tree_log, /vda5050/status, /vda5050/path, /map, /plan, /optimal_trajectory, /particle_cloud, /local_costmap/costmap, /global_costmap/costmap, /rosout]"
 topics_pub_glob: "[/compass/teleop, /compass/control/heartbeat, /initialpose]"
 services_glob: "[/compass/*, /robot/set_operating_mode, /robot/maps/activate]"
 actions_glob: "[]"
@@ -697,7 +702,7 @@ float32 angular                  # рад/с
 ```
 
 ```
-# ScanPoints.msg — /compass/scan_points
+# ScanPoints.msg — /compass/scan_points, /compass/camera_points
 builtin_interfaces/Time stamp
 string frame
 float32[] points                 # x0, y0, x1, y1, … в мировых координатах frame
@@ -981,6 +986,8 @@ v1.5 (2026-10-28):
   только в `AUTOMATIC`, без аренды. Агент больше не ставит `FollowPath` сам.
 - Маршрут `line` того же источника заменяется на ходу, без остановки (§4.2). Смена режима отменяет
   текущую цель.
+- В `/plan` маршрута `line` — весь оставшийся маршрут; агент отдаёт его fms как `plannedPath`.
+- `/compass/camera_points` — препятствия камеры глубины на карте, как скан (§2).
 
 ## 9. Открытые вопросы к Семёну
 

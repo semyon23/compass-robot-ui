@@ -21,6 +21,7 @@ import { drawRobotShape } from '../lib/robotShapes'
 const props = defineProps({
   pose: { type: Object, default: null }, // { x, y, theta }
   scan: { type: Array, default: null }, // [[x, y], ...] в том же фрейме, что поза
+  camera: { type: Array, default: null }, // препятствия камеры глубины — как scan
   // { width, height, resolution, origin: [x, y, theta], data } — как nav_msgs/OccupancyGrid
   map: { type: Object, default: null },
   robotRadius: { type: Number, default: 0.3 }, // м — из get_info (robot_radius в compass_core.yaml)
@@ -85,7 +86,8 @@ function draw() {
   drawNav(c)
   drawDraft(c)
   drawParticles(c)
-  drawScan(c)
+  drawPoints(props.camera, c.camera)
+  drawPoints(props.scan, c.scan)
   drawRobot(c)
   drawPick(c)
   drawScaleBar(c)
@@ -345,11 +347,12 @@ function drawParticles(c) {
   ctx.restore()
 }
 
-function drawScan(c) {
-  if (!props.scan?.length) return
+// Точки скана лидара и препятствий камеры: квадратики, размер — от масштаба.
+function drawPoints(points, color) {
+  if (!points?.length) return
   const s = Math.max(2, Math.min(4, view.scale * 0.04))
-  ctx.fillStyle = c.scan
-  for (const [x, y] of props.scan) {
+  ctx.fillStyle = color
+  for (const [x, y] of points) {
     const [px, py] = toScreen(x, y)
     ctx.fillRect(px - s / 2, py - s / 2, s, s)
   }
@@ -565,7 +568,7 @@ watch(() => props.map, (m) => {
 }, { immediate: true })
 
 watch(
-  () => [props.pose, props.scan, props.map, props.path, props.localPlan, props.particles, props.localCostmap,
+  () => [props.pose, props.scan, props.camera, props.map, props.path, props.localPlan, props.particles, props.localCostmap,
     props.globalCostmap, props.fmsPath, props.nav, props.draft, props.tool, follow.value, isDark.value, robotLook.kind.value],
   requestDraw,
   { deep: false },

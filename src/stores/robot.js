@@ -15,6 +15,8 @@ const FMS_STALE_MS = 3000 // агент шлёт /vda5050/status раз в се�
 const STREAMS = {
   pose: { topic: '/compass/pose', type: 'robot_interfaces/msg/RobotPose' },
   scan: { topic: '/compass/scan_points', type: 'robot_interfaces/msg/ScanPoints' },
+  // Препятствия камеры глубины (ниже луча лидара) — тот же формат, что скан.
+  camera: { topic: '/compass/camera_points', type: 'robot_interfaces/msg/ScanPoints' },
   // Карта большая: бинарно (CBOR) и не чаще раза в секунду.
   map: { topic: '/map', type: 'nav_msgs/msg/OccupancyGrid', options: { compression: 'cbor', throttle_rate: 1000 } },
   nav: { topic: '/compass/nav_status', type: 'robot_interfaces/msg/NavStatus' },
@@ -96,6 +98,7 @@ export const useRobotStore = defineStore('robot', () => {
   const rawStatus = ref(null) // robot_interfaces/msg/RobotStatus как пришёл
   const pose = ref(null)
   const scan = ref(null)
+  const camera = ref(null)
   const liveMap = ref(null) // /map: { width, height, resolution, origin, data }
   const navStatus = ref(null) // /compass/nav_status: текущая или последняя цель оператора Compass
   // Недостигнутые точки маршрута (номера с 1) — из события NAV_WAYPOINTS_MISSED: { goalId, points }.
@@ -284,15 +287,23 @@ export const useRobotStore = defineStore('robot', () => {
     }
   }
 
+  // ScanPoints: x0, y0, x1, y1, … → [[x, y], …]
+  function pointPairs(msg) {
+    const pts = msg.points || []
+    const pairs = []
+    for (let i = 0; i + 1 < pts.length; i += 2) pairs.push([pts[i], pts[i + 1]])
+    return pairs
+  }
+
   const streamHandlers = {
     pose: (msg) => {
       pose.value = { frame: msg.frame, x: msg.x, y: msg.y, theta: msg.theta, linear: msg.linear, angular: msg.angular }
     },
     scan: (msg) => {
-      const pts = msg.points || []
-      const pairs = []
-      for (let i = 0; i + 1 < pts.length; i += 2) pairs.push([pts[i], pts[i + 1]])
-      scan.value = pairs
+      scan.value = pointPairs(msg)
+    },
+    camera: (msg) => {
+      camera.value = pointPairs(msg)
     },
     nav: (msg) => {
       // Цели агента VDA (source fms) — отрезки order'а: их показывает карточка fms и маршрут fms на карте,
@@ -405,6 +416,7 @@ export const useRobotStore = defineStore('robot', () => {
       rawStatus.value = null
       pose.value = null
       scan.value = null
+      camera.value = null
       liveMap.value = null
       navPath.value = []
       fms.value = null
@@ -430,6 +442,7 @@ export const useRobotStore = defineStore('robot', () => {
     status,
     pose,
     scan,
+    camera,
     liveMap,
     navStatus,
     navMissed,

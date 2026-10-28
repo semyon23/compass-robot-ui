@@ -397,6 +397,7 @@ export default {
     layer_globalCostmap: 'Стоимость: вся карта',
     layer_localCostmap: 'Стоимость: рядом с роботом',
     layer_scan: 'Скан лидара',
+    layer_camera: 'Камера: низкие препятствия',
     layer_particles: 'Частицы локализации',
     layer_plan: 'Глобальный путь',
     layer_localPlan: 'Траектория контроллера',

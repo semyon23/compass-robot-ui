@@ -13,7 +13,7 @@ const { isDark } = useTheme()
 const layers = useMapLayers()
 
 // Ключ цвета слоя в MAP_COLORS.
-const COLOR_KEY = { scan: 'scan', particles: 'particles', plan: 'plan', localPlan: 'localPlan', goals: 'nav', fmsRoute: 'fms' }
+const COLOR_KEY = { scan: 'scan', camera: 'camera', particles: 'particles', plan: 'plan', localPlan: 'localPlan', goals: 'nav', fmsRoute: 'fms' }
 
 function swatch(key) {
   if (key === 'map') return { background: isDark.value ? '#e2e8f0' : '#1e293b' }

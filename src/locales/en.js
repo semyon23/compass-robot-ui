@@ -397,6 +397,7 @@ export default {
     layer_globalCostmap: 'Costmap: whole map',
     layer_localCostmap: 'Costmap: around the robot',
     layer_scan: 'Lidar scan',
+    layer_camera: 'Camera: low obstacles',
     layer_particles: 'Localization particles',
     layer_plan: 'Global path',
     layer_localPlan: 'Controller trajectory',

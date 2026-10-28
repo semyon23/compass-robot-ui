@@ -20,7 +20,7 @@ const { t } = useI18n()
 const message = useMessage()
 const robot = useRobotStore()
 
-useSubscription(['pose', 'scan', 'path', 'bt', 'fmsPath'])
+useSubscription(['pose', 'scan', 'camera', 'path', 'bt', 'fmsPath'])
 
 const follow = ref(true)
 const joystickCard = ref(null)
@@ -157,6 +157,7 @@ const deg = (rad) => (rad == null ? '—' : `${Math.round((rad * 180) / Math.PI)
         :pose="pose"
         :robot-radius="robot.info?.robotRadius ?? undefined"
         :scan="layers.scan ? robot.scan : null"
+        :camera="layers.camera ? robot.camera : null"
         :map="layers.map ? robot.liveMap : null"
         :tool="tool"
         :path="navReady && layers.plan ? robot.navPath : null"
